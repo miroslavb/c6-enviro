@@ -1,0 +1,97 @@
+menu "C6 Enviro Sensor"
+
+    menu "Pins (ESP32-C6 Super Mini)"
+
+        config ENVIRO_I2C_SDA_GPIO
+            int "BME680 I2C SDA GPIO"
+            default 22
+            help
+                Any free GPIO works (the C6 routes I2C through the GPIO matrix).
+                GPIO20-23 are the "safe picks" on the Super Mini (no strapping,
+                no flash, no USB). Default 22 matches docs/WIRING.md.
+
+        config ENVIRO_I2C_SCL_GPIO
+            int "BME680 I2C SCL GPIO"
+            default 23
+
+        config ENVIRO_VBAT_ADC_GPIO
+            int "Battery-sense ADC GPIO (must be GPIO0..6 = ADC1)"
+            range 0 6
+            default 2
+            help
+                Battery positive terminal reaches this pin through the resistor
+                divider described in docs/WIRING.md. Only GPIO0-6 are ADC1
+                channels on the C6.
+
+        config ENVIRO_LED_GPIO
+            int "WS2812 status LED GPIO"
+            default 8
+            help
+                Onboard WS2812 on the C6 Super Mini (also a strapping pin —
+                output-only use after boot is safe).
+
+    endmenu
+
+    menu "Battery sense"
+
+        config ENVIRO_VBAT_DIV_NUM
+            int "Divider ratio numerator (Vbat = Vadc * NUM / DEN)"
+            default 2
+            help
+                With the recommended equal-value divider (2 x 200 kΩ) the ADC
+                sees Vbat/2, so NUM/DEN = 2/1.
+
+        config ENVIRO_VBAT_DIV_DEN
+            int "Divider ratio denominator"
+            default 1
+
+        config ENVIRO_VBAT_SAMPLES
+            int "ADC samples averaged per reading"
+            default 8
+
+    endmenu
+
+    menu "BME680"
+
+        config ENVIRO_GAS_HEATER_TEMP_C
+            int "Gas heater target temperature, °C"
+            default 300
+
+        config ENVIRO_GAS_HEATER_DUR_MS
+            int "Gas heater duration, ms"
+            default 100
+
+    endmenu
+
+    menu "Cycle / power"
+
+        config ENVIRO_REPORT_FLUSH_MS
+            int "Time to keep the radio up after setting attributes, ms"
+            default 2000
+            help
+                The ZBOSS reporting engine transmits the changed attributes
+                within this window; then the device deep-sleeps. Lower = less
+                energy per cycle but risks cutting off an unsent report.
+
+        config ENVIRO_MIN_SLEEP_MS
+            int "Minimum deep-sleep duration, ms"
+            default 500
+            help
+                Floor for the interval-compensated sleep calculation so a slow
+                cycle can never spin the device into a zero-sleep loop.
+
+        config ENVIRO_JOIN_TIMEOUT_S
+            int "Give up steering / rejoining after this many seconds"
+            default 60
+            help
+                Battery protection: an unjoined device scanning channels burns
+                ~80 mA. After the timeout it deep-sleeps for
+                ENVIRO_RETRY_SLEEP_S and tries again.
+
+        config ENVIRO_RETRY_SLEEP_S
+            int "Sleep between failed join attempts, seconds"
+            default 60
+
+    endmenu
+
+endmenu

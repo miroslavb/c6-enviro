@@ -1,0 +1,19 @@
+{
+  "name": "C6-ENVIRO",
+  "version": "0.1.0",
+  "chipFamily": "ESP32-C6",
+  "parts": [
+    {
+      "path": "firmware/bootloader.bin",
+      "offset": 0
+    },
+    {
+      "path": "firmware/partition-table.bin",
+      "offset": 32768
+    },
+    {
+      "path": "firmware/c6_enviro.bin",
+      "offset": 65536
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+# NUC Caddy — addition to the existing c6.miroslav.diy vhost.
+#
+# The c6 host is SHARED by the C6-family projects:
+#   /flash/radiometer/  (c6-radiometer)
+#   /flash/display/     (c6-lcd-zigbee)
+#   /flash/enviro/      (THIS project)  ← add the two stanzas below
+#   /dashboard/ /api/* /ws  (radiometer backend)
+#
+# Insert into the existing `route { ... }` block of the c6.miroslav.diy site,
+# next to the other /flash/* handlers. The trailing-slash redirect is REQUIRED:
+# the esptool-js flasher fetches ./firmware/manifest.json RELATIVELY, which only
+# resolves under the tool's own directory when the URL ends in "/".
+
+	redir /flash/enviro /flash/enviro/ 308
+
+	handle_path /flash/enviro* {
+		root * /var/www/c6-enviro
+		try_files {path} /index.html
+		file_server
+	}
+
+# Deploy the static files:
+#   rsync -a --delete web/ nuc:/var/www/c6-enviro/
+# (web/ is self-contained: flasher, wiring.svg, console/, firmware bins, esptool bundle.)

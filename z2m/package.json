@@ -1,0 +1,33 @@
+{
+  "name": "biometal-c6-enviro-z2m",
+  "version": "1.0.0",
+  "description": "Zigbee2MQTT external converter for the Biometal C6-ENVIRO sensor (ESP32-C6 Super Mini + BME680 + solar battery, deep-sleep Zigbee end device). Assembled programmatically from the project byte-contract.",
+  "type": "module",
+  "main": "biometal_enviro.mjs",
+  "exports": {
+    ".": "./biometal_enviro.mjs",
+    "./defs": "./lib/defs.mjs",
+    "./contract": "./lib/contract.generated.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "files": [
+    "biometal_enviro.mjs",
+    "lib/defs.mjs",
+    "lib/contract.generated.mjs"
+  ],
+  "keywords": [
+    "zigbee2mqtt",
+    "external-converter",
+    "esp32-c6",
+    "bme680",
+    "solar",
+    "sleepy-end-device"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "zigbee-herdsman": "^5.0.0",
+    "zigbee-herdsman-converters": "^26.76.0"
+  }
+}

@@ -1,0 +1,62 @@
+# Home Assistant package for the C6-ENVIRO solar Zigbee sensor.
+# Copy to your packages/ directory and adjust the entity ids if your Z2M
+# friendly name differs from "c6-enviro".
+#
+# Everything data-related is auto-discovered from Zigbee2MQTT; this package
+# only adds the two alerts that make a solar-powered sleeper trustworthy:
+#   1. battery low  (from the device's own status bit)
+#   2. gone silent  (wake_count stopped changing — panel shaded / battery dead
+#      / fell off the mesh)
+
+template:
+  - trigger:
+      - trigger: state
+        entity_id: sensor.c6_enviro_wake_count
+    sensor:
+      - name: "C6 Enviro last wake"
+        unique_id: c6_enviro_last_wake
+        device_class: timestamp
+        state: "{{ now() }}"
+
+binary_sensor:
+  - platform: template
+    sensors:
+      c6_enviro_stale:
+        friendly_name: "C6 Enviro silent"
+        device_class: problem
+        # 15 min without a single wake report = trouble at any interval ≤ 300 s.
+        # Raise if you run hour-long report intervals.
+        value_template: >
+          {{ states('sensor.c6_enviro_last_wake') not in ['unknown', 'unavailable']
+             and (now() - states.sensor.c6_enviro_last_wake.last_changed).total_seconds() > 900 }}
+
+automation:
+  - id: c6_enviro_battery_low
+    alias: "C6 Enviro: battery low"
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.c6_enviro_battery_low
+        to: "on"
+        for: "00:10:00"
+    actions:
+      - action: notify.notify
+        data:
+          title: "🔋 C6 Enviro"
+          message: >
+            Battery low: {{ states('sensor.c6_enviro_vbat_mv') }} mV
+            ({{ states('sensor.c6_enviro_battery') }} %). Check the solar panel.
+
+  - id: c6_enviro_gone_silent
+    alias: "C6 Enviro: gone silent"
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.c6_enviro_stale
+        to: "on"
+    actions:
+      - action: notify.notify
+        data:
+          title: "📡 C6 Enviro"
+          message: >
+            No wake reports for 15+ minutes
+            (last: {{ states('sensor.c6_enviro_last_wake') }}).
+            Battery was {{ states('sensor.c6_enviro_vbat_mv') }} mV.

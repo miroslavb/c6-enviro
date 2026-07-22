@@ -1,0 +1,63 @@
+# =============================================================================
+# sdkconfig.defaults — ESP32-C6 Super Mini enviro sensor (sleepy Zigbee ED)
+# These seed `sdkconfig` on first configure. Single-core RISC-V C6, 4 MB flash,
+# NO PSRAM. Every non-obvious option is commented with WHY.
+# =============================================================================
+
+# ---- Target ----------------------------------------------------------------
+CONFIG_IDF_TARGET="esp32c6"
+
+# ---- Flash / partitions ----------------------------------------------------
+# ESP32-C6FH4 = 4 MB in-package flash. DIO is the safe default mode.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+# Custom single-app + zb_storage/zb_fct table (no OTA; flashed from the browser).
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# ---- Console: native USB-Serial-JTAG ---------------------------------------
+# No UART bridge chip on the Super Mini; the console rides the built-in
+# USB-Serial-JTAG (GPIO12/13). Do NOT repurpose those GPIOs or USB dies.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# ---- Zigbee: SLEEPY END DEVICE (ZED) ----------------------------------------
+# CONFIG_ZB_ZED links libesp-zigbee-core.zed.a — the end-device ZBOSS variant.
+# (The sibling display/radiometer projects are ZCZR routers; this device runs
+# on a battery and deep-sleeps, so it must be an end device.)
+CONFIG_ZB_ENABLED=y
+CONFIG_ZB_ZED=y
+# esp-zigbee-lib 2.x: the stable 1.x SDK API (esp_zigbee_core.h, esp_zb_*)
+# lives under include/compat and is ONLY exposed when this is set.
+CONFIG_ZB_SDK_1xx=y
+# Native on-die 802.15.4 radio.
+CONFIG_ZB_RADIO_NATIVE=y
+CONFIG_IEEE802154_ENABLED=y
+
+# ---- Deep sleep -------------------------------------------------------------
+# Skip the bootloader's image re-validation on deep-sleep wake: shaves real
+# milliseconds off every 3 s cycle (we wake ~28k times a day).
+CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP=y
+# System time source that survives deep sleep sanely (per the esp-zigbee
+# deep_sleep example's defaults).
+CONFIG_NEWLIB_TIME_SYSCALL_USE_RTC_HRT=y
+# NOTE deliberately ABSENT: CONFIG_PM_ENABLE / tickless idle /
+# CONFIG_IEEE802154_SLEEP_ENABLE / esp_zb_sleep_enable() — those are the
+# LIGHT-sleep machinery. This firmware uses pure timer-wake deep sleep; the
+# stack restores the network from the zb_storage NVRAM partition on wake.
+
+# ---- Radios we DON'T use → free RAM/flash ----------------------------------
+CONFIG_BT_ENABLED=n
+
+# ---- Main task / FreeRTOS ---------------------------------------------------
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+CONFIG_FREERTOS_HZ=1000
+
+# ---- Logging ----------------------------------------------------------------
+# Info level: the web serial console is a first-class debug surface for this
+# device family (join issues are log-diagnosable). The cost per cycle is small
+# and the console is only attached on the bench.
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# ---- Newlib -----------------------------------------------------------------
+CONFIG_NEWLIB_NANO_FORMAT=n

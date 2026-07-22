@@ -1,0 +1,20 @@
+# Managed component dependencies (pulled by the IDF component manager on build).
+# Pinned to the lines verified on the sibling c6-radiometer project (same chip,
+# same ESP-IDF 5.4, same esp-zigbee-lib 2.x compat surface).
+dependencies:
+  idf:
+    version: ">=5.4,<5.5"
+
+  # --- Zigbee stack ---
+  # esp-zigbee 2.x ships ONE self-contained component: esp-zigbee-lib bundles
+  # the prebuilt ZBOSS binaries (incl. the ZED variant this project links via
+  # CONFIG_ZB_ZED) AND the SDK C API. The 1.x API this firmware is written
+  # against (esp_zigbee_core.h, esp_zb_*) lives under include/compat and is
+  # exposed by CONFIG_ZB_SDK_1xx=y.
+  espressif/esp-zigbee-lib: "^2.0.0"
+
+  # --- Peripherals ---
+  # WS2812 status LED via the RMT backend.
+  espressif/led_strip: "^3.0.0"
+  # Debounced BOOT/user button (GPIO9): short = stay awake, long = factory reset.
+  espressif/button: "^4.1.0"

@@ -1,0 +1,20 @@
+# ESP-IDF build output
+firmware/build/
+firmware/managed_components/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/host-test/test_cycle
+
+# NOTE: firmware/dependencies.lock IS committed (pins exact managed-component
+# versions — esp-zigbee-lib etc. — for reproducible builds, incl. CI).
+
+# Node
+node_modules/
+z2m/node_modules/
+
+# local working-dir markers / logs
+.disk-guard.yaml
+*.log
+
+# NOTE: web/firmware/*.bin ARE committed on purpose (kbd lesson: the flasher must
+# work on a plain clone). Build artifacts are refreshed by scripts/build-firmware.sh.

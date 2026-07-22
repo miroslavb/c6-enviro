@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 640" font-family="ui-monospace,Menlo,Consolas,monospace">
+  <defs>
+    <style>
+      .box{fill:#121821;stroke:#243140;stroke-width:2;rx:12}
+      .title{fill:#e6edf3;font-size:17px;font-weight:700}
+      .sub{fill:#8aa0b3;font-size:11px}
+      .pin{fill:#8aa0b3;font-size:12px}
+      .pinv{fill:#e6edf3;font-size:12px;font-weight:700}
+      .wire{fill:none;stroke-width:3;stroke-linecap:round}
+      .plus{stroke:#ef4444}.minus{stroke:#64748b}
+      .sda{stroke:#FFF76B}.scl{stroke:#22d3ee}.sense{stroke:#22c55e}
+      .lbl{font-size:11px}
+      .note{fill:#8aa0b3;font-size:11.5px}
+      .comp{fill:#0e141c;stroke:#3b4a5e;stroke-width:1.5}
+    </style>
+  </defs>
+  <rect width="960" height="640" fill="#0b0f14"/>
+  <text x="24" y="34" class="title">C6-ENVIRO — wiring</text>
+  <text x="24" y="52" class="sub">ESP32-C6 Super Mini · BME680 (I²C) · Waveshare Solar Power Manager · battery-voltage divider</text>
+
+  <!-- ============ Solar panel ============ -->
+  <g>
+    <rect x="24" y="90" width="120" height="84" class="box" rx="10"/>
+    <line x1="44" y1="90" x2="24" y2="174" stroke="#243140" stroke-width="1"/>
+    <line x1="74" y1="90" x2="54" y2="174" stroke="#243140" stroke-width="1"/>
+    <line x1="104" y1="90" x2="84" y2="174" stroke="#243140" stroke-width="1"/>
+    <line x1="134" y1="90" x2="114" y2="174" stroke="#243140" stroke-width="1"/>
+    <text x="36" y="120" class="title" font-size="14">☀ Solar</text>
+    <text x="36" y="138" class="sub">panel 6–24 V</text>
+  </g>
+
+  <!-- ============ Solar Power Manager ============ -->
+  <g>
+    <rect x="220" y="80" width="240" height="180" class="box" rx="12"/>
+    <text x="240" y="110" class="title">Solar Power Manager</text>
+    <text x="240" y="128" class="sub">Waveshare (plain / D) · MPPT · 4.2 V cutoff</text>
+    <!-- terminals -->
+    <circle cx="220" cy="150" r="5" fill="#ef4444"/><text x="232" y="154" class="pin">SOLAR IN +</text>
+    <circle cx="220" cy="172" r="5" fill="#64748b"/><text x="232" y="176" class="pin">SOLAR IN −</text>
+    <circle cx="460" cy="150" r="5" fill="#ef4444"/><text x="452" y="140" class="pin" text-anchor="end">BAT +</text>
+    <circle cx="460" cy="172" r="5" fill="#64748b"/><text x="452" y="186" class="pin" text-anchor="end">BAT −</text>
+    <text x="240" y="240" class="note">5 V OUT / USB: не используется в работе</text>
+    <text x="240" y="254" class="note">(заряжает элемент; питание MCU — от BAT)</text>
+  </g>
+  <!-- solar -> manager -->
+  <path d="M144 122 H 182 V 150 H 215" class="wire plus"/>
+  <path d="M144 146 H 170 V 172 H 215" class="wire minus"/>
+
+  <!-- ============ Battery ============ -->
+  <g>
+    <rect x="540" y="96" width="170" height="70" class="box" rx="35"/>
+    <rect x="710" y="116" width="12" height="30" fill="#3b4a5e"/>
+    <text x="566" y="126" class="title" font-size="15">Li-ion 3.7 V</text>
+    <text x="566" y="144" class="sub">18650 / LiPo, 1S</text>
+    <circle cx="540" cy="118" r="5" fill="#ef4444"/><text x="552" y="112" class="pin">+</text>
+    <circle cx="540" cy="146" r="5" fill="#64748b"/><text x="552" y="160" class="pin">−</text>
+  </g>
+  <!-- manager BAT <-> battery -->
+  <path d="M465 150 H 500 V 118 H 535" class="wire plus"/>
+  <path d="M465 172 H 500 V 146 H 535" class="wire minus"/>
+
+  <!-- battery + down to rails -->
+  <path d="M500 150 V 380 H 560" class="wire plus"/>
+  <path d="M500 380 V 560 H 96" class="wire plus" opacity="0"/>
+  <path d="M482 172 H 482 V 420 H 560" class="wire minus" transform="translate(18,0)"/>
+
+  <!-- ============ ESP32-C6 Super Mini ============ -->
+  <g>
+    <rect x="560" y="300" width="230" height="290" class="box" rx="12"/>
+    <text x="580" y="330" class="title">ESP32-C6 Super Mini</text>
+    <text x="580" y="348" class="sub">USB-C · 4 MB flash · Zigbee</text>
+    <rect x="640" y="298" width="70" height="14" fill="#0e141c" stroke="#3b4a5e"/>
+    <text x="647" y="309" class="sub" font-size="9">USB-C</text>
+    <!-- left pins -->
+    <circle cx="560" cy="380" r="5" fill="#ef4444"/><text x="572" y="384" class="pinv">5V (VIN)</text>
+    <circle cx="560" cy="420" r="5" fill="#64748b"/><text x="572" y="424" class="pinv">GND</text>
+    <circle cx="560" cy="460" r="5" fill="#f59e0b"/><text x="572" y="464" class="pinv">3V3</text>
+    <circle cx="560" cy="500" r="5" fill="#22c55e"/><text x="572" y="504" class="pinv">GPIO2 · ADC1_CH2</text>
+    <text x="572" y="518" class="sub">battery sense</text>
+    <!-- right pins -->
+    <circle cx="790" cy="380" r="5" fill="#FFF76B"/><text x="778" y="384" class="pinv" text-anchor="end">GPIO22 · SDA</text>
+    <circle cx="790" cy="420" r="5" fill="#22d3ee"/><text x="778" y="424" class="pinv" text-anchor="end">GPIO23 · SCL</text>
+    <text x="778" y="470" class="pin" text-anchor="end">GPIO8 · WS2812 LED</text>
+    <text x="778" y="490" class="pin" text-anchor="end">GPIO9 · BOOT кнопка</text>
+    <text x="778" y="510" class="pin" text-anchor="end">GPIO15 · blue LED</text>
+    <text x="580" y="570" class="note">BOOT: коротко = не спать 5 мин · ≥3 c = factory reset</text>
+  </g>
+
+  <!-- ============ Divider ============ -->
+  <g>
+    <text x="330" y="330" class="title" font-size="14" fill="#22c55e">Делитель Vbat → ADC</text>
+    <!-- BAT+ node -->
+    <path d="M500 380 H 360" class="wire plus"/>
+    <text x="352" y="372" class="pin" text-anchor="end">BAT +</text>
+    <!-- R1 -->
+    <rect x="340" y="392" width="40" height="64" class="comp" rx="6"/>
+    <text x="360" y="420" class="pinv" text-anchor="middle">R1</text>
+    <text x="360" y="436" class="sub" text-anchor="middle">200k</text>
+    <path d="M360 380 V 392" class="wire plus"/>
+    <!-- midpoint -->
+    <circle cx="360" cy="470" r="5" fill="#22c55e"/>
+    <path d="M360 456 V 470" class="wire sense"/>
+    <path d="M360 470 H 470 V 500 H 555" class="wire sense"/>
+    <text x="410" y="462" class="lbl" fill="#22c55e">→ GPIO2</text>
+    <!-- R2 -->
+    <rect x="340" y="484" width="40" height="64" class="comp" rx="6"/>
+    <text x="360" y="512" class="pinv" text-anchor="middle">R2</text>
+    <text x="360" y="528" class="sub" text-anchor="middle">200k</text>
+    <path d="M360 470 V 484" class="wire sense"/>
+    <!-- C1 -->
+    <rect x="290" y="494" width="14" height="44" class="comp" rx="3"/>
+    <text x="297" y="556" class="sub" text-anchor="middle">100n</text>
+    <path d="M297 470 V 494 M297 538 V 566" class="wire sense" stroke="#64748b"/>
+    <path d="M297 470 H 355" class="wire sense"/>
+    <!-- to GND -->
+    <path d="M360 548 V 566 H 500 V 420" class="wire minus"/>
+    <text x="392" y="582" class="sub">GND</text>
+  </g>
+
+  <!-- ============ BME680 ============ -->
+  <g>
+    <rect x="24" y="380" width="230" height="200" class="box" rx="12"/>
+    <text x="44" y="410" class="title">BME680</text>
+    <text x="44" y="428" class="sub">GY-BME680 / CJMCU-680 · I²C 0x76/0x77</text>
+    <circle cx="254" cy="460" r="5" fill="#f59e0b"/><text x="242" y="464" class="pinv" text-anchor="end">VCC (3V3)</text>
+    <circle cx="254" cy="490" r="5" fill="#64748b"/><text x="242" y="494" class="pinv" text-anchor="end">GND</text>
+    <circle cx="254" cy="520" r="5" fill="#22d3ee"/><text x="242" y="524" class="pinv" text-anchor="end">SCL</text>
+    <circle cx="254" cy="550" r="5" fill="#FFF76B"/><text x="242" y="554" class="pinv" text-anchor="end">SDA</text>
+    <text x="44" y="574" class="sub">SDO→GND = 0x76 (по умолчанию)</text>
+  </g>
+  <!-- BME wires: route below the C6 box -->
+  <path d="M259 460 H 300 V 620 H 830 V 460 H 795" class="wire" stroke="#f59e0b" transform="translate(0,0)" opacity="0"/>
+  <!-- 3V3: BME VCC -> C6 3V3 -->
+  <path d="M259 460 H 316 V 608 H 540 V 460 H 555" class="wire" stroke="#f59e0b"/>
+  <!-- GND: BME GND -> C6 GND rail -->
+  <path d="M259 490 H 304 V 596 H 518 V 420 H 555" class="wire minus"/>
+  <!-- SCL: BME SCL -> GPIO23 (right side) -->
+  <path d="M259 520 H 292 V 630 H 862 V 420 H 795" class="wire scl"/>
+  <!-- SDA: BME SDA -> GPIO22 (right side) -->
+  <path d="M259 550 H 280 V 618 H 848 V 380 H 795" class="wire sda"/>
+
+  <!-- legend -->
+  <g transform="translate(24,64)">
+    <line x1="0" y1="0" x2="26" y2="0" class="wire plus"/><text x="32" y="4" class="lbl" fill="#8aa0b3">V+ / BAT+</text>
+    <line x1="120" y1="0" x2="146" y2="0" class="wire minus"/><text x="152" y="4" class="lbl" fill="#8aa0b3">GND</text>
+    <line x1="205" y1="0" x2="231" y2="0" class="wire" stroke="#f59e0b"/><text x="237" y="4" class="lbl" fill="#8aa0b3">3V3</text>
+    <line x1="285" y1="0" x2="311" y2="0" class="wire sda"/><text x="317" y="4" class="lbl" fill="#8aa0b3">SDA</text>
+    <line x1="365" y1="0" x2="391" y2="0" class="wire scl"/><text x="397" y="4" class="lbl" fill="#8aa0b3">SCL</text>
+    <line x1="445" y1="0" x2="471" y2="0" class="wire sense"/><text x="477" y="4" class="lbl" fill="#8aa0b3">Vbat sense → GPIO2</text>
+  </g>
+</svg>

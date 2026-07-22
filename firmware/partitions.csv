@@ -1,0 +1,27 @@
+# Custom partition table for the ESP32-C6-LCD-1.47 (4 MB flash, NO PSRAM).
+#
+# Why custom (not the stock single/dual-OTA tables):
+#   * The Zigbee/ZBOSS stack needs its own dedicated NVS-like partitions
+#     ("zb_storage" + "zb_fct") — see the esp-zigbee-sdk examples' partitions.csv.
+#   * 4 MB is tight once ZBOSS + LVGL + the ST7789 driver are linked, so we run a
+#     SINGLE app image with NO OTA (frees ~1.5 MB vs a dual-OTA layout). The board
+#     is flashed from the browser installer, so field OTA is not required.
+#
+# Layout (offsets are auto-computed from sizes; first usable offset is 0x9000,
+# right after the 0x8000 partition table sector):
+#
+# Name        Type  SubType   Offset    Size     Notes
+# ----------- ----- --------- --------- -------- -----------------------------------
+# Sizes must stay 4 KB-aligned (0x1000). App is 0x10000-aligned by the bootloader.
+nvs,          data, nvs,      0x9000,   0x6000,
+phy_init,     data, phy,      0xf000,   0x1000,
+# Factory app: ~3 MB. Comfortably holds ZBOSS lib + LVGL 9 + ST7789 + app.
+factory,      app,  factory,  0x10000,  0x300000,
+# Zigbee persistent network data (keys, parent, bindings). Label is matched by
+# the esp-zigbee 2.x datasets layer via nvs_open_from_partition("zb_storage",...)
+# — so the subtype MUST be `nvs` (the 1.x-era examples' `fat` subtype makes that
+# lookup fail and esp_zb_init abort()s in ezb_plat_datasets_init; found on real
+# hardware 2026-07-10, decoded via addr2line + lib strings).
+zb_storage,   data, nvs,      ,         0x4000,
+# Zigbee factory/production data partition used by the SDK. Keep "zb_fct" exactly.
+zb_fct,       data, fat,      ,         0x1000,

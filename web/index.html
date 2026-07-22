@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f14" />
+  <title>Flash · C6 Enviro · Miroslav DIY</title>
+  <meta name="description" content="Browser flasher for the Biometal C6-ENVIRO: ESP32-C6 Super Mini + BME680 + solar battery — deep-sleeping Zigbee sensor for Home Assistant." />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🌿 <span>C6 Enviro Installer</span></div>
+    <a class="diy-link" href="https://miroslav.diy/projects/c6-enviro/">← Miroslav DIY</a>
+    <div class="brandsub">c6.miroslav.diy · BME680 + solar · sleepy Zigbee end device</div>
+  </header>
+
+  <main>
+    <!-- ===================== WHAT IT IS ===================== -->
+    <section class="card intro">
+      <h1>Flash your C6 Enviro sensor</h1>
+      <p class="hint">
+        This installs the firmware for an <b>ESP32-C6 Super Mini</b> wired to a <b>BME680</b>
+        environment sensor and powered by a <b>Waveshare Solar Power Manager</b> + Li-ion cell.
+        Every <b>3 seconds</b> (configurable 3&nbsp;s…1&nbsp;h from Home Assistant) it wakes from
+        deep sleep, measures <b>temperature · humidity · pressure · gas resistance ·
+        battery voltage</b>, reports everything to HA over <b>Zigbee2MQTT</b>, and goes back to
+        sleep.
+      </p>
+      <p class="hint">
+        Flashing happens entirely in your browser over USB — nothing is uploaded anywhere and
+        no credentials are baked in (the device pairs over Zigbee). Wiring:
+        <a href="#wiring">diagram below</a> · live boot log: <a href="console/">serial console</a>.
+      </p>
+    </section>
+
+    <!-- ===================== BROWSER / HTTPS GATE ===================== -->
+    <section id="serialWarn" class="card warn hidden">
+      <h2>⚠️ This browser can't flash the device</h2>
+      <p id="serialWarnMsg" class="hint">
+        In-browser flashing needs the <b>Web Serial</b> API, which is only available in
+        <b>Chrome</b> or <b>Edge</b> on desktop (or Chrome on Android), served over <b>HTTPS</b>.
+        Please reopen this page in a supported browser over a secure (https://) connection.
+      </p>
+    </section>
+
+    <!-- ===================== FLASH CARD ===================== -->
+    <section class="card">
+      <h2>Install firmware</h2>
+      <p class="hint">
+        Plug the ESP32-C6 Super Mini into a USB port with a <b>data</b> cable, then press
+        <b>Connect &amp; Flash</b> and pick the device's serial port when prompted.
+      </p>
+
+      <button id="flashBtn" class="btn primary big">Connect &amp; Flash</button>
+
+      <div id="progressWrap" class="progress hidden">
+        <div id="progressBar" class="progress-bar"></div>
+      </div>
+      <div id="flashStatus" class="hint"></div>
+
+      <details id="logBox" class="adv hidden">
+        <summary>Flash log</summary>
+        <pre id="log" class="log"></pre>
+      </details>
+
+      <details class="adv">
+        <summary>Advanced options</summary>
+        <label class="lbl" for="baud">Flash speed (baud)</label>
+        <select id="baud" class="select">
+          <option value="115200" selected>115200 — most reliable (native USB)</option>
+          <option value="460800">460800 (external UART adapter only)</option>
+          <option value="921600">921600 — fastest (external UART adapter only)</option>
+        </select>
+        <label class="check"><input type="checkbox" id="eraseFirst" checked /> Erase whole flash first (recommended)</label>
+        <label class="check"><input type="checkbox" id="compress" checked /> Compress flash data (leave on)</label>
+        <p class="hint small">
+          The C6 uses native USB-Serial/JTAG, where baud is virtual — leave the speed at 115200
+          unless you are flashing through an external UART adapter. Erase-first clears any
+          half-written flash from a previous failed attempt and makes writes far more reliable.
+        </p>
+      </details>
+    </section>
+
+    <!-- ===================== HOLD-BOOT HELP ===================== -->
+    <section class="card help">
+      <h2>If the port doesn't appear or connecting fails</h2>
+      <p class="hint">
+        The C6's native USB-Serial/JTAG auto-reset into the bootloader is sometimes flaky. Force
+        download mode by hand:
+      </p>
+      <ol class="steps">
+        <li>Unplug the board.</li>
+        <li><b>Hold the BOOT button</b> (GPIO9).</li>
+        <li>Plug it back in <b>while still holding BOOT</b>.</li>
+        <li>Release BOOT after about 2 seconds.</li>
+        <li>Press <b>Connect &amp; Flash</b> again, keeping the speed at 115200 and erase-first checked.</li>
+      </ol>
+      <p class="hint">
+        Note: once the enviro firmware is running, the device <b>deep-sleeps between cycles</b>
+        and its USB port comes and goes — that is normal. To flash again, use the hold-BOOT
+        procedure above (it keeps the chip awake in the bootloader).
+      </p>
+      <button id="eraseBtn" class="btn big" type="button">Recover device (erase flash only)</button>
+    </section>
+
+    <!-- ===================== AFTER FLASHING / PAIRING ===================== -->
+    <section class="card success-soft">
+      <h2>After flashing — pairing (order matters for a sleepy device)</h2>
+      <ol class="steps">
+        <li>Install the Z2M converter first: <code>z2m/biometal_enviro.mjs</code> + <code>z2m/lib/</code>
+            into <code>external_converters/</code>, enable <code>advanced.enable_external_js: true</code>, restart Z2M.</li>
+        <li>Open <b>Zigbee2MQTT → Permit join</b>.</li>
+        <li>Power (or reset) the board. It joins and — important — <b>stays awake 5 minutes</b>
+            so the interview can finish. Don't cut power during this window.</li>
+        <li>It appears as <b>EndDevice</b> <code>C6-ENVIRO</code> by <code>Biometal</code> with
+            temperature, humidity, pressure, gas, battery and diagnostic entities.</li>
+      </ol>
+      <p class="hint small">
+        Wake a sleeping device: press <b>BOOT</b> briefly (it stays awake 5 more minutes).
+        Re-pair on a new network: <b>hold BOOT ≥3 s</b> → Zigbee factory reset.
+        Change the 3 s cadence from HA: <code>report_interval_s</code> (survives reboot & power loss).
+      </p>
+    </section>
+
+    <!-- ===================== WIRING ===================== -->
+    <section class="card" id="wiring">
+      <h2>Wiring diagram</h2>
+      <p class="hint">
+        The battery feeds the Super Mini's <b>5V pin</b> (its LDO happily runs from 3.0–4.2 V),
+        the Solar Power Manager only charges the cell, and a 2×200 kΩ divider lets GPIO2 watch
+        the battery voltage. BME680 breakout sits on I²C (any GY-BME680 / CJMCU-680, address
+        0x76 or 0x77 — auto-detected).
+      </p>
+      <img src="wiring.svg" alt="Wiring: Solar Power Manager + battery + ESP32-C6 Super Mini + BME680 + voltage divider" style="width:100%;border:1px solid var(--line);border-radius:10px;background:#0e141c" />
+      <p class="hint small">
+        Details, part numbers and the power-budget math: <a href="https://github.com/miroslavb/c6-enviro/blob/main/docs/WIRING.md" target="_blank" rel="noopener">docs/WIRING.md</a>.
+        Battery-life note: at the default 3 s cycle the radio duty cycle dominates — fine on
+        solar, ~2–3 days on a bare 2000 mAh cell. Set <code>report_interval_s</code> ≥ 60 for
+        weeks-long battery-only operation.
+      </p>
+    </section>
+
+    <!-- ===================== DOCS LINKS ===================== -->
+    <section class="card">
+      <h2>Documentation</h2>
+      <ul class="links">
+        <li><a href="console/">🖥️ Serial console (live boot log in the browser)</a></li>
+        <li><a href="https://github.com/miroslavb/c6-enviro#readme" target="_blank" rel="noopener">Project README</a></li>
+        <li><a href="https://github.com/miroslavb/c6-enviro/blob/main/ARCHITECTURE.md" target="_blank" rel="noopener">Architecture</a></li>
+        <li><a href="https://github.com/miroslavb/c6-enviro/blob/main/docs/CONTRACT.md" target="_blank" rel="noopener">Zigbee contract (clusters &amp; attributes)</a></li>
+        <li><a href="https://github.com/miroslavb/c6-enviro/blob/main/docs/WIRING.md" target="_blank" rel="noopener">Wiring &amp; power budget</a></li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span><a href="https://github.com/miroslavb/c6-enviro" target="_blank" rel="noopener">source on GitHub</a></span>
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

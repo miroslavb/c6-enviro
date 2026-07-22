@@ -1,0 +1,56 @@
+{
+  "$schema": "./contract.schema.note.md",
+  "_doc": "SINGLE SOURCE OF TRUTH for the Zigbee byte-contract shared by firmware (C), the Z2M converter (JS) and the HA docs. Edit ONLY this file, then run `node contract/codegen.mjs`. CI fails if the generated files drift (contract/contract.test.mjs). This project: ESP32-C6 Super Mini + BME680 + Waveshare Solar Power Manager -> sleepy Zigbee end device for Home Assistant.",
+  "version": 1,
+  "device": {
+    "manufacturerName": "Biometal",
+    "modelId": "C6-ENVIRO",
+    "vendor": "Biometal",
+    "description": "ESP32-C6 solar environment sensor: BME680 (T/RH/P/gas) + battery telemetry, deep-sleep Zigbee end device",
+    "powerSource": 3,
+    "_powerSourceNote": "0x03 = Battery. Solar-charged Li-ion behind the Waveshare Solar Power Manager. Sleepy-end-device role comes from the ZED build + rx_on_when_idle=false, not from this cosmetic field."
+  },
+  "manufacturerCode": 4891,
+  "_manufacturerCodeNote": "0x131B = Espressif Systems' allocated ZCL manufacturer code. MUST be identical in firmware (on the wire) and in the converter, or manufacturer-specific attribute reads/writes silently fail as 'attribute not found'.",
+  "customCluster": {
+    "name": "biometalEnviro",
+    "id": 64512,
+    "_idNote": "0xFC00 — manufacturer-specific cluster range (0xFC00-0xFFFF). DOWN config writes only; UP telemetry rides STANDARD clusters (see _upPathNote)."
+  },
+  "_upPathNote": "Lesson inherited from c6-radiometer (proven live 2026-07-11): the Z2M addon environment cannot decode INCOMING custom-cluster frames (endpoint->registry lookup loses the attached cluster; msg.cluster undefined; no fz converter matches). So ALL device->HA telemetry travels on STANDARD clusters: Temperature 0x0402 / Humidity 0x0405 / Pressure 0x0403 / PowerConfig 0x0001 on EP1, plus one genAnalogInput (0x000C) endpoint per non-standard channel (gas resistance, status flags, precise vbat, wake counter). The custom cluster carries ONLY the HA->device config writes below (outgoing framing from the converter is proven to work).",
+  "_exposeNote": "`expose` is the canonical HA-facing property name: the Z2M expose `name` (-> HA entity object_id) AND, for `down` attrs, the key in `zigbee2mqtt/<device>/set`.",
+  "attributes": [
+    { "name": "statusFlags",     "expose": "status_flags",      "id": 0,  "type": "UINT16",  "dir": "up",                  "desc": "Sensor + power status bitmask (see statusBits); mirrored on AI EP4" },
+    { "name": "wakeCount",       "expose": "wake_count",        "id": 1,  "type": "UINT32",  "dir": "up",                  "desc": "Deep-sleep wake counter since power-on; increments every cycle, so HA sees one report per wake" },
+    { "name": "vbatMv",          "expose": "vbat_mv",           "id": 2,  "type": "UINT16",  "dir": "up",  "unit": "mV",   "desc": "Battery voltage, millivolts (precise; PowerConfig 0x0020 only has 100 mV steps)" },
+    { "name": "awakeMs",         "expose": "awake_ms",          "id": 3,  "type": "UINT16",  "dir": "up",  "unit": "ms",   "desc": "Duration of the previous wake cycle, ms (deep-sleep duty-cycle diagnostic)" },
+    { "name": "gasResistance",   "expose": "gas_resistance",    "id": 4,  "type": "SINGLE",  "dir": "up",  "unit": "Ω",    "desc": "BME680 gas sensor resistance, ohms (higher = cleaner air); mirrored on AI EP2" },
+    { "name": "reportIntervalS", "expose": "report_interval_s", "id": 16, "type": "UINT16",  "dir": "down", "unit": "s",   "default": 3, "min": 3, "max": 3600, "desc": "Deep-sleep measurement/report period, seconds (3 s default; raise to 60+ for battery-only operation)" },
+    { "name": "gasEnabled",      "expose": "gas_enabled",       "id": 17, "type": "BOOLEAN", "dir": "down", "default": 1,  "desc": "Run the BME680 gas heater each cycle (heater burns ~12 mA for 150 ms; disable to save battery)" }
+  ],
+  "analogEndpoints": [
+    { "ep": 2, "attr": "gasResistance", "description": "gas ohm" },
+    { "ep": 3, "attr": "vbatMv",        "description": "vbat mV" },
+    { "ep": 4, "attr": "statusFlags",   "description": "status flags" },
+    { "ep": 5, "attr": "wakeCount",     "description": "wake count" }
+  ],
+  "_analogEndpointsNote": "One STANDARD genAnalogInput endpoint per channel, value in presentValue (SINGLE float, stack-reported). Integers ride the float exactly (all < 2^24). wakeCount changes every cycle -> guarantees at least one report per wake, so HA `last_seen` tracks the 3 s cadence even when the environment is static.",
+  "standardClusters": [
+    { "cluster": "Temperature Measurement", "id": 1026, "ep": 1, "attr": "measuredValue", "encoding": "int16, °C × 100",   "source": "BME680 temperature" },
+    { "cluster": "Pressure Measurement",    "id": 1027, "ep": 1, "attr": "measuredValue", "encoding": "int16, hPa (0.1 kPa)", "source": "BME680 pressure" },
+    { "cluster": "Relative Humidity",       "id": 1029, "ep": 1, "attr": "measuredValue", "encoding": "uint16, % × 100",   "source": "BME680 humidity" },
+    { "cluster": "Power Configuration",     "id": 1,    "ep": 1, "attr": "batteryVoltage 0x0020 / batteryPercentageRemaining 0x0021", "encoding": "uint8 100 mV / uint8 0.5 %", "source": "battery ADC via divider" }
+  ],
+  "statusBits": [
+    { "name": "sensor_error",    "bit": 0, "desc": "BME680 not detected or measurement failed this cycle" },
+    { "name": "heater_unstable", "bit": 1, "desc": "Gas heater did not reach stability — gas_resistance unreliable this cycle" },
+    { "name": "battery_low",     "bit": 2, "desc": "Battery below the low-voltage threshold" },
+    { "name": "vbat_invalid",    "bit": 3, "desc": "Battery ADC read failed (check the divider wiring)" },
+    { "name": "gas_disabled",    "bit": 4, "desc": "Gas heater disabled via HA (gas_enabled = OFF)" },
+    { "name": "first_boot",      "bit": 5, "desc": "This cycle is a cold boot / reset, not a deep-sleep wake" }
+  ],
+  "batteryLowMv": 3400,
+  "_batteryLowMvNote": "Below this the battery_low status bit is raised. The %-curve lives in firmware/main/cycle.c (host-tested piecewise Li-ion curve).",
+  "awakeWindowS": 300,
+  "_awakeWindowNote": "After a factory-new join (and after a BOOT-button press) the device stays awake this long, polling its parent, so the Zigbee2MQTT interview can complete — a sleepy device that naps mid-interview never gets its endpoints into the database."
+}

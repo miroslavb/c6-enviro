@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Serial console · C6 Enviro · Miroslav DIY</title>
+  <meta name="description" content="Web Serial монитор для C6-ENVIRO: boot-лог каждого пробуждения из deep sleep, с автопереподключением (Chrome/Edge, USB)." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🖥️</text></svg>" />
+  <style>
+    :root{--bg:#0b0f14;--card:#141922;--fg:#e8ecf2;--dim:#8b93a3;--line:#232b38;--accent:#FFF76B;--ok:#40c060;--err:#ff5a3c}
+    *{box-sizing:border-box} html,body{margin:0}
+    body{background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;min-height:100vh}
+    .wrap{max-width:900px;margin:0 auto;padding:28px 16px}
+    h1{font-size:22px;margin:0 0 4px} .sub{color:var(--dim);font-size:13.5px;margin:0 0 18px}
+    .bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+    button{font:600 14px system-ui;padding:9px 14px;border-radius:10px;border:1px solid var(--line);
+      background:#0e131b;color:var(--fg);cursor:pointer}
+    button.primary{background:var(--accent);color:#1a1a10;border-color:transparent}
+    button:disabled{opacity:.45;cursor:default}
+    label.chk{display:flex;gap:6px;align-items:center;color:var(--dim);font-size:13px}
+    #status{font-size:13px;color:var(--dim)} #status.ok{color:var(--ok)} #status.err{color:var(--err)}
+    #log{background:#07090d;border:1px solid var(--line);border-radius:12px;padding:14px;height:60vh;
+      overflow-y:auto;white-space:pre-wrap;word-break:break-all;font:12.5px/1.45 ui-monospace,Menlo,Consolas,monospace;color:#c9d4e0}
+    .hint{color:var(--dim);font-size:13px;margin-top:12px}
+    .hint code{background:#0e131b;border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+    a{color:#7db3ff}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🖥️ Serial console — C6 Enviro</h1>
+  <p class="sub">Boot-лог в браузере (Web Serial, Chrome/Edge). Устройство спит между циклами —
+    USB-порт пропадает и появляется каждые ~3 секунды, монитор <b>переподключается сам</b>. Всё локально.</p>
+  <div class="bar">
+    <button id="btnConnect" class="primary">🔌 Подключиться</button>
+    <button id="btnDisconnect" disabled>Отключить</button>
+    <button id="btnReset" disabled>🔄 Reset чипа</button>
+    <button id="btnClear">Очистить</button>
+    <button id="btnCopy">📋 Скопировать лог</button>
+    <label class="chk"><input type="checkbox" id="chkAuto" checked>автопереподключение</label>
+    <span id="status">не подключено</span>
+  </div>
+  <div id="log">Нажмите «Подключиться» и выберите USB-порт платы (обычно “USB JTAG/serial debug unit”).
+
+C6-ENVIRO спит между измерениями: порт исчезает на время deep sleep и возвращается на ~2 с
+каждого пробуждения. Оставьте вкладку открытой — лог циклов будет накапливаться сам.
+
+Чтобы держать устройство бодрым 5 минут (для отладки/интервью Z2M) — коротко нажмите BOOT.
+</div>
+  <p class="hint">
+    Расшифровка: <code>invalid header</code>/тишина = приложение не прошито или чип в bootloader-режиме (передёрните USB) ·
+    <code>Guru Meditation / abort()</code> = падение прошивки, скопируйте лог целиком ·
+    нормальный цикл: <code>C6-ENVIRO v… starting (wake #N)</code> → <code>BME680@0x76: T=…</code> →
+    <code>network restored from NVRAM</code> → <code>deep sleep … ms</code>.
+    · <a href="../">← прошивальщик</a>
+  </p>
+</div>
+<script>
+(() => {
+  const logEl = document.getElementById('log');
+  const st = document.getElementById('status');
+  const bC = document.getElementById('btnConnect');
+  const bD = document.getElementById('btnDisconnect');
+  const bR = document.getElementById('btnReset');
+  const chkAuto = document.getElementById('chkAuto');
+  let port = null, reader = null, keep = false, wantAuto = false;
+  const dec = new TextDecoder();
+
+  function setStatus(t, cls){ st.textContent = t; st.className = cls || ''; }
+  function append(t){
+    const stick = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 8;
+    logEl.textContent += t;
+    if (logEl.textContent.length > 400000) logEl.textContent = logEl.textContent.slice(-300000);
+    if (stick) logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  if (!('serial' in navigator)) {
+    setStatus('Web Serial недоступен — нужен Chrome/Edge (desktop) по HTTPS', 'err');
+    bC.disabled = true;
+  }
+
+  async function openPort(p){
+    port = p;
+    await port.open({ baudRate: 115200 });
+    // КРИТИЧНО для ESP32-C6 (USB-Serial-JTAG): браузер может оставить DTR/RTS
+    // в состоянии, которое вгоняет чип в download-mode (в логе только
+    // "ESP-ROM:esp32c6-..."). Явно отпускаем обе линии.
+    try { await port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch {}
+    keep = true;
+    bC.disabled = true; bD.disabled = false; bR.disabled = false;
+    setStatus('подключено (115200) — ждём цикл пробуждения', 'ok');
+    readLoop();
+  }
+
+  bC.onclick = async () => {
+    try {
+      wantAuto = true;
+      await openPort(await navigator.serial.requestPort());
+    } catch (e) {
+      setStatus('не подключилось: ' + e.message, 'err');
+    }
+  };
+
+  // Deep sleep = устройство пропадает с шины USB. Разрешение на порт у вкладки
+  // остаётся, поэтому при следующем появлении ('connect') открываем его снова
+  // без запроса — так лог 3-секундных циклов копится непрерывно.
+  navigator.serial?.addEventListener?.('connect', async (e) => {
+    if (!wantAuto || !chkAuto.checked || port) return;
+    try {
+      append('\n[устройство проснулось — переподключаюсь]\n');
+      await openPort(e.target || e.port);
+    } catch (err) {
+      setStatus('автоподключение не удалось: ' + err.message, 'err');
+    }
+  });
+
+  function handleGone(){
+    // Порт исчез (deep sleep). Прибираемся и ждём событие 'connect'.
+    try { if (reader) reader.releaseLock(); } catch {}
+    reader = null; port = null; keep = false;
+    bC.disabled = false; bD.disabled = true; bR.disabled = true;
+    if (wantAuto && chkAuto.checked) {
+      setStatus('устройство спит — жду следующее пробуждение…', 'ok');
+      append('[deep sleep — порт закрылся, жду пробуждение]\n');
+    } else {
+      setStatus('порт закрыт');
+    }
+  }
+
+  // Аппаратный перезапуск в НОРМАЛЬНЫЙ режим (импульс RTS при DTR=0).
+  bR.onclick = async () => {
+    if (!port) return;
+    try {
+      await port.setSignals({ dataTerminalReady: false, requestToSend: true });
+      await new Promise(r => setTimeout(r, 120));
+      await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+      setStatus('reset отправлен — ловим boot-лог', 'ok');
+    } catch (e) {
+      setStatus('reset не удался: ' + e.message, 'err');
+    }
+  };
+
+  async function readLoop(){
+    while (keep && port && port.readable) {
+      reader = port.readable.getReader();
+      try {
+        for (;;) {
+          const {value, done} = await reader.read();
+          if (done) break;
+          if (value) append(dec.decode(value));
+        }
+      } catch (e) {
+        // NetworkError = устройство ушло в deep sleep / отвалилось от шины.
+        break;
+      } finally {
+        try { reader.releaseLock(); } catch {}
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+    if (keep) { try { await port?.close(); } catch {} handleGone(); }
+  }
+
+  bD.onclick = async () => {
+    wantAuto = false; keep = false;
+    try { if (reader) await reader.cancel(); } catch {}
+    try { if (port) await port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch {}
+    try { if (port) await port.close(); } catch {}
+    port = null;
+    bC.disabled = false; bD.disabled = true; bR.disabled = true;
+    setStatus('отключено');
+  };
+
+  document.getElementById('btnClear').onclick = () => { logEl.textContent = ''; };
+  document.getElementById('btnCopy').onclick = async () => {
+    try { await navigator.clipboard.writeText(logEl.textContent); setStatus('лог скопирован в буфер', 'ok'); }
+    catch { setStatus('копирование не удалось — выделите текст вручную', 'err'); }
+  };
+})();
+</script>
+</body>
+</html>
