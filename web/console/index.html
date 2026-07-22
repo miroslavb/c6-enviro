@@ -80,8 +80,11 @@ C6-ENVIRO спит между измерениями: порт исчезает 
   }
 
   async function openPort(p){
+    // ВАЖНО: port присваиваем только ПОСЛЕ успешного open() — иначе упавшее
+    // открытие (устройство заснуло между выбором и open, порт занят другой
+    // вкладкой) оставляло port != null и блокировало автопереподключение.
+    await p.open({ baudRate: 115200 });
     port = p;
-    await port.open({ baudRate: 115200 });
     // КРИТИЧНО для ESP32-C6 (USB-Serial-JTAG): браузер может оставить DTR/RTS
     // в состоянии, которое вгоняет чип в download-mode (в логе только
     // "ESP-ROM:esp32c6-..."). Явно отпускаем обе линии.
@@ -92,14 +95,41 @@ C6-ENVIRO спит между измерениями: порт исчезает 
     readLoop();
   }
 
+  function explainOpenError(e){
+    const m = String(e && e.message || e);
+    if (/Failed to open|InvalidStateError|already open|in use/i.test(m)) {
+      return 'порт занят или пропал: ЗАКРОЙТЕ вкладку прошивальщика (она держит порт) — либо устройство заснуло; жду следующее пробуждение…';
+    }
+    if (/No port selected/i.test(m)) {
+      return 'порт не выбран. Устройство спит бОльшую часть цикла — если списка нет, подождите 1–2 с с открытым диалогом или зажмите BOOT на плате';
+    }
+    return 'не подключилось: ' + m + ' — жду появление порта…';
+  }
+
   bC.onclick = async () => {
     try {
       wantAuto = true;
       await openPort(await navigator.serial.requestPort());
     } catch (e) {
-      setStatus('не подключилось: ' + e.message, 'err');
+      port = null;
+      // wantAuto остаётся true: как только устройство проснётся и порт
+      // появится, обработчик 'connect' откроет его сам.
+      setStatus(explainOpenError(e), 'err');
     }
   };
+
+  // Порт уже разрешался этой странице раньше? Открываем без единого клика —
+  // open() (в отличие от requestPort) не требует пользовательского жеста.
+  (async () => {
+    try {
+      const granted = await navigator.serial?.getPorts?.() || [];
+      if (granted.length) {
+        wantAuto = true;
+        setStatus('нашёл ранее разрешённый порт — подключусь при первом пробуждении…', 'ok');
+        try { await openPort(granted[0]); } catch { port = null; }
+      }
+    } catch {}
+  })();
 
   // Deep sleep = устройство пропадает с шины USB. Разрешение на порт у вкладки
   // остаётся, поэтому при следующем появлении ('connect') открываем его снова

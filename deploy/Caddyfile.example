@@ -15,7 +15,10 @@
 
 	handle_path /flash/enviro* {
 		root * /var/www/c6-enviro
-		try_files {path} /index.html
+		# {path}/index.html matters: the console lives in a SUBDIRECTORY and a
+		# plain `try_files {path} /index.html` treats /console/ as a missing
+		# file -> serves the flasher page instead (found live 2026-07-23).
+		try_files {path} {path}/index.html /index.html
 		file_server
 	}
 
