@@ -21,6 +21,12 @@ cp z2m/biometal_enviro.mjs external_converters/
 cp -r z2m/lib external_converters/lib
 ```
 
+> **Shared `external_converters/` with sibling projects** (c6-radiometer /
+> c6-lcd-zigbee): the `lib/` filenames collide. Install the lib files with a
+> project prefix instead — `lib/enviro-defs.mjs` + `lib/enviro-contract.generated.mjs` —
+> and patch the three relative imports accordingly (this is how the home
+> installation is deployed; the `c6lcd-*` prefix pattern is the precedent).
+
 `configuration.yaml`:
 
 ```yaml
