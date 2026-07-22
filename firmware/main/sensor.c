@@ -106,6 +106,28 @@ esp_err_t sensor_measure(bool with_gas, sensor_reading_t *out)
         ESP_LOGE(TAG, "bme68x_init failed (%d) at 0x%02X", rc, addr);
         goto out_dev;
     }
+    // v0.1.1 field diagnosis: genuine BME680/688 parts NEVER have zero T-calib
+    // words (factory NVM). All-zero calib => T/H/P compensate to exactly 0 and
+    // the heater setpoint is garbage (heater_unstable forever) while gas ADC
+    // still returns plausible ohms — seen live 2026-07-23. Retry the init once
+    // (covers slow NVM copy after power-up); if still zero, scream.
+    if (dev.calib.par_t1 == 0 && dev.calib.par_t2 == 0) {
+        ESP_LOGW(TAG, "calib reads zero (par_t1=par_t2=0) — re-initialising");
+        hal_delay_us(50000, NULL);
+        rc = bme68x_init(&dev);
+        if (rc != BME68X_OK) {
+            ESP_LOGE(TAG, "bme68x re-init failed (%d)", rc);
+            goto out_dev;
+        }
+    }
+    ESP_LOGI(TAG, "calib: par_t1=%u par_t2=%d par_h1=%u par_p1=%u variant=%u",
+             (unsigned)dev.calib.par_t1, (int)dev.calib.par_t2,
+             (unsigned)dev.calib.par_h1, (unsigned)dev.calib.par_p1,
+             (unsigned)dev.variant_id);
+    if (dev.calib.par_t1 == 0 && dev.calib.par_t2 == 0) {
+        ESP_LOGE(TAG, "CALIBRATION STILL ZERO — T/RH/P will read 0.00; "
+                      "suspect counterfeit sensor or wiring; gas ohms unreliable");
+    }
 
     struct bme68x_conf conf = {
         .os_hum  = BME68X_OS_2X,

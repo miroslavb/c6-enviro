@@ -243,11 +243,23 @@ const definition = {
     // Standard EP1 sensors — zero custom glue:
     // firmware reports °C×100 / %×100 / hPa / 0.5 %-units, matching the
     // modernExtend scales (100 / 100 / 10-to-kPa / divide-by-2).
+    //
+    // REPORTING OVERRIDES (found live 2026-07-23): the modernExtend defaults
+    // are built for mains devices — temperature min 10 s / change 1 °C,
+    // pressure change 5 kPa, battery min 1 HOUR. A deep-sleeping 3 s reporter
+    // is awake ~2.5 s per cycle: a min-interval above 0 or a coarse delta
+    // silently freezes the entity at its interview-time value (battery sat at
+    // a stale 100 % for half an hour). min=0 / tiny delta => the changed value
+    // leaves within the flush window of the same wake.
     identify(),
-    temperature(),
-    humidity(),
-    pressure(),
-    battery({voltage: true}),
+    temperature({reporting: {min: 0, max: 3600, change: 1}}),   // 0.01 °C
+    humidity({reporting: {min: 0, max: 3600, change: 10}}),     // 0.1 %
+    pressure({reporting: {min: 0, max: 3600, change: 1}}),      // 1 hPa
+    battery({
+      voltage: true,
+      percentageReporting: true,
+      percentageReportingConfig: {min: 0, max: 3600, change: 1}, // 0.5 %
+    }),
 
     // UP: gas resistance, precise vbat, status bits, wake counter (AI EPs).
     analogTelemetryExtend,
