@@ -38,6 +38,15 @@ test("converter loads and exposes the enviro entities", async () => {
   }
 });
 
+test("interview surface stays within EP1..EP5", async () => {
+  const mod = await import("../biometal_enviro.mjs");
+  assert.deepEqual(
+    mod.analogChannels.map((channel) => channel.ep),
+    [2, 3, 4, 5],
+    "a sleepy C6-ENVIRO must expose only four Analog Input endpoints so the full device stays at five endpoints",
+  );
+});
+
 test("analog telemetry decoder maps endpoints to channels", async () => {
   const mod = await import("../biometal_enviro.mjs");
   const fz = mod.analogTelemetryExtend.fromZigbee[0];
@@ -58,19 +67,13 @@ test("analog telemetry decoder maps endpoints to channels", async () => {
     fz.convert(null, {endpoint: {ID: 5}, cluster: "genAnalogInput", type: "attributeReport", data: {presentValue: 28801}}),
     {wake_count: 28801},
   );
-  // v0.1.2 mirrors: EP6/7/8 publish into the canonical T/RH/P properties
-  assert.deepEqual(
-    fz.convert(null, {endpoint: {ID: 6}, cluster: "genAnalogInput", type: "attributeReport", data: {presentValue: 25.316}}),
-    {temperature: 25.32},
-  );
-  assert.deepEqual(
-    fz.convert(null, {endpoint: {ID: 7}, cluster: "genAnalogInput", type: "attributeReport", data: {presentValue: 40.257}}),
-    {humidity: 40.26},
-  );
-  assert.deepEqual(
-    fz.convert(null, {endpoint: {ID: 8}, cluster: "genAnalogInput", type: "attributeReport", data: {presentValue: 99.123}}),
-    {pressure: 99.12},
-  );
+  // EP6/7/8 were retired in v0.1.5 to restore the five-endpoint interview budget.
+  for (const endpoint of [6, 7, 8]) {
+    assert.equal(
+      fz.convert(null, {endpoint: {ID: endpoint}, cluster: "genAnalogInput", type: "attributeReport", data: {presentValue: 25.316}}),
+      undefined,
+    );
+  }
 
   // Unknown endpoint -> undefined (no crash)
   assert.equal(

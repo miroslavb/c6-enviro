@@ -17,6 +17,9 @@
 //    EP4  genAnalogInput presentValue → status_flags (+ per-bit binaries)
 //    EP5  genAnalogInput presentValue → wake_count (increments every cycle —
 //         proof of life at the 3 s cadence even when the air is static)
+//  EP6-8 are intentionally absent. A field regression showed that expanding
+//  this sleepy device from five to eight endpoints made Z2M's interview miss
+//  active-endpoint/simple-descriptor replies under normal network traffic.
 //
 //  WHY: the Z2M addon environment cannot decode INCOMING custom-cluster
 //  frames (endpoint→registry lookup loses the attached cluster; msg.cluster
@@ -92,17 +95,8 @@ const identity = buildDeviceIdentity();
 function buildAnalogTelemetryExtend(channels, flags) {
   const byEp = Object.fromEntries(channels.map((c) => [c.ep, c]));
 
-  // v0.1.2 MIRROR channels: T/RH/P also ride the AI path (EP6-8) because the
-  // standard measurement-cluster reports never made it off this hardware+lib
-  // while every AI presentValue did (live 2026-07-23). They publish into the
-  // SAME canonical properties the modernExtend entities read, so HA gets one
-  // temperature/humidity/pressure entity fed by whichever path delivers.
-  // No extra exposes — temperature()/humidity()/pressure() already expose them.
-  const MIRRORS = {tempC: "temperature", humidityPct: "humidity", pressureKpa: "pressure"};
-
   const exposesList = [];
   for (const c of channels) {
-    if (MIRRORS[c.attr]) continue; // mirrored into an existing expose
     if (c.attr === flags.attribute) {
       exposesList.push(
         e
@@ -148,10 +142,6 @@ function buildAnalogTelemetryExtend(channels, flags) {
             payload[b.name] = (value & (1 << b.bit)) !== 0 ? "ON" : "OFF";
           }
           return payload;
-        }
-        if (MIRRORS[c.attr]) {
-          // Device sends human units (°C / % / kPa); round to 2 decimals.
-          return {[MIRRORS[c.attr]]: Math.round(v * 100) / 100};
         }
         return {[c.name]: c.integer ? Math.round(v) : v};
       },

@@ -285,14 +285,6 @@ static const rep_slot_t REPORT_SLOTS[] = {
       ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, true },
     { AI_EP_WAKE_COUNT, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
       ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, true },
-    // v0.1.2: T/RH/P mirrors — live pairing 2026-07-23 showed the standard
-    // measurement-cluster values never reaching HA while every AI channel did.
-    { AI_EP_TEMP_C, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-      ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, true },
-    { AI_EP_HUMIDITY_PCT, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-      ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, true },
-    { AI_EP_PRESSURE_KPA, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
-      ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, true },
 };
 #define REPORT_SLOT_COUNT (sizeof(REPORT_SLOTS) / sizeof(REPORT_SLOTS[0]))
 
@@ -441,12 +433,6 @@ static void push_cb(uint8_t param)
     set_ai_present_value(AI_EP_VBAT_MV,        (float)m->vbat_mv);
     set_ai_present_value(AI_EP_STATUS_FLAGS,   (float)s_status);
     set_ai_present_value(AI_EP_WAKE_COUNT,     (float)m->wake_count);
-    if (m->sensor_ok) {
-        // v0.1.2 T/RH/P mirrors, already in human units: °C / % / kPa.
-        set_ai_present_value(AI_EP_TEMP_C,       (float)m->temp_c100 / 100.0f);
-        set_ai_present_value(AI_EP_HUMIDITY_PCT, (float)m->hum_c100 / 100.0f);
-        set_ai_present_value(AI_EP_PRESSURE_KPA, (float)m->press_pa / 1000.0f);
-    }
 
     // Give the stack engine + parent polling a window to move the frames out,
     // then let main decide (sleep / stay awake).

@@ -109,11 +109,14 @@ Below: the ones that shaped this firmware, plus everything new.
     Active_EP_req + 8 simple-descriptor reads before herdsman's interview timeout →
     `Interview failed ... can not get active endpoints`. The Z2M DB confirms it:
     `endpoints 1..8, modelId C6-ENVIRO, swBuildId 0.1.0, interviewCompleted:false`.
-    **FIX (v0.1.5, TODO): drop EP6/7/8, return to 5 endpoints; fix temperature
-    properly via the 0x0402 zcl-status finding, not via mirror endpoints.** Fewer
-    endpoints = interview completes = works like v0.1.0. Data DID flow at 03:04
-    (RH/P/battery/gas) even with interviewCompleted:false — so a working interview is
-    not strictly required for telemetry, but it is for a clean, reliable device.
+    **v0.1.5 implementation:** drop EP6/7/8 and return to EP1..EP5. The contract,
+    firmware endpoint table, reporting slots, converter, tests and browser binary all
+    enforce this budget. T/RH/P are again carried only by their standard EP1 clusters;
+    the v0.1.4 device-side min=1 reporting fix is retained. Fresh hardware interview
+    is the acceptance test — do not claim the regression closed until Z2M records
+    `interviewCompleted:true` with endpoints `[1,2,3,4,5]`. Data DID flow at 04:22
+    (T/RH/P/battery/gas) even with `interviewCompleted:false`, but a successful
+    interview is required for clean HA discovery and reliable configuration.
 29. **Operational hazards to avoid next time:** (a) don't `force-remove` + rejoin —
     it leaves a half-known device that interviews worse than a clean factory-new
     join; (b) the CH340 coordinator (Z-Stack 20210708) wedges "in bootloader" when

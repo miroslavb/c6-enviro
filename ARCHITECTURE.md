@@ -13,10 +13,10 @@ inherited unchanged; what's new is the sleepy-end-device lifecycle.
 | Cadence | `report_interval_s`, default **3 s**, writable 3…3600 from HA, NVS-persisted | The spec. Interval-compensated: sleep = period − time awake. |
 | UP telemetry | **STANDARD clusters only** (T 0x0402 / RH 0x0405 / P 0x0403 / PowerConfig 0x0001 on EP1; genAnalogInput EP2–EP5 for gas Ω, vbat mV, status bits, wake counter) | The Z2M addon cannot decode incoming custom-cluster frames (proven live 2026-07-11 on the radiometer). |
 | DOWN config | Custom cluster 0xFC00 `biometalEnviro`, manuf 0x131B | Outgoing converter framing works; two writable attrs, persisted to NVS on the device. |
-| Reporting transport | **Stack reporting engine** (self-binding + `esp_zb_zcl_update_reporting_info`, min=0/delta=0) | The only transmit path that ever emitted frames on this hardware+lib; manual `report_attr_cmd_req` never did (five failed variants on the radiometer). min=0 matters: the report must leave within the 2 s flush window. |
+| Reporting transport | **Stack reporting engine** (self-binding + `esp_zb_zcl_update_reporting_info`, device min=1 s / delta=0) | The only transmit path that ever emitted frames on this hardware+lib; manual `report_attr_cmd_req` never did (five failed variants on the radiometer). Field evidence showed the ZED build rejects device-side min=0; min=1 still fits in the 2 s flush window. Z2M coordinator-side reporting requests remain min=0. |
 | Sensor | Vendored **Bosch BME68x API v4.4.8** (BSD-3), integer mode, forced T/P/H+gas per wake | Official compensation math; forced mode = one conversion per wake; gas trusted only with `GASM_VALID`+`HEAT_STAB`. |
 | Battery sense | ADC1 (GPIO2) + 2×200 kΩ divider, curve-fitting calibration, 8-sample average | PowerConfig gives % (0.5 % units — Z2M divides by 2) and 100 mV voltage; precise mV rides AI EP3. `batteryVoltage` is NOT stack-reportable (esp-zigbee #463) — reading only. |
-| Interview | **5-minute stay-awake window** after factory-new join; BOOT short-press re-opens it | A sleepy device that naps mid-interview never gets its endpoints into the Z2M database. |
+| Interview | **5-minute stay-awake window** plus a hard **five-endpoint budget** (EP1..EP5); BOOT short-press re-opens it | A sleepy device that naps mid-interview never gets its endpoints into the Z2M database. Field evidence showed EP6..EP8 mirror endpoints pushed this ZED over the reliable interview budget. |
 | Join battery guard | 60 s steering budget → sleep 60 s → retry | An unjoined, scanning radio burns ~80 mA and would flatten the cell overnight. |
 
 ## Wake-cycle sequence
@@ -24,7 +24,7 @@ inherited unchanged; what's new is the sleepy-end-device lifecycle.
 ```
 RTC timer ──► boot (skip-validate) ──► NVS config ──► measure BME680 + ADC   (~0.3 s)
    ──► esp_zb_start(false) ──► DEVICE_REBOOT (NVRAM restore)                (~0.5–1.5 s)
-   ──► push attrs ──► stack engine reports (min=0, delta=0)
+   ──► push attrs ──► stack engine reports (device min=1 s, delta=0)
    ──► flush window (2 s, Kconfig) ──► deep sleep (period − awake, floor 0.5 s)
 ```
 

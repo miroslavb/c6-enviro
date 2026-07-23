@@ -1,7 +1,7 @@
 {
   "$schema": "./contract.schema.note.md",
   "_doc": "SINGLE SOURCE OF TRUTH for the Zigbee byte-contract shared by firmware (C), the Z2M converter (JS) and the HA docs. Edit ONLY this file, then run `node contract/codegen.mjs`. CI fails if the generated files drift (contract/contract.test.mjs). This project: ESP32-C6 Super Mini + BME680 + Waveshare Solar Power Manager -> sleepy Zigbee end device for Home Assistant.",
-  "version": 1,
+  "version": 2,
   "device": {
     "manufacturerName": "Biometal",
     "modelId": "C6-ENVIRO",
@@ -25,9 +25,6 @@
     { "name": "vbatMv",          "expose": "vbat_mv",           "id": 2,  "type": "UINT16",  "dir": "up",  "unit": "mV",   "desc": "Battery voltage, millivolts (precise; PowerConfig 0x0020 only has 100 mV steps)" },
     { "name": "awakeMs",         "expose": "awake_ms",          "id": 3,  "type": "UINT16",  "dir": "up",  "unit": "ms",   "desc": "Duration of the previous wake cycle, ms (deep-sleep duty-cycle diagnostic)" },
     { "name": "gasResistance",   "expose": "gas_resistance",    "id": 4,  "type": "SINGLE",  "dir": "up",  "unit": "Ω",    "desc": "BME680 gas sensor resistance, ohms (higher = cleaner air); mirrored on AI EP2" },
-    { "name": "tempC",           "expose": "temperature",       "id": 5,  "type": "SINGLE",  "dir": "up",  "unit": "°C",   "desc": "Temperature mirror, °C float (AI EP6 — belt-and-braces beside the standard 0x0402 cluster)" },
-    { "name": "humidityPct",     "expose": "humidity",          "id": 6,  "type": "SINGLE",  "dir": "up",  "unit": "%",    "desc": "Relative-humidity mirror, %% float (AI EP7 — beside the standard 0x0405 cluster)" },
-    { "name": "pressureKpa",     "expose": "pressure",          "id": 7,  "type": "SINGLE",  "dir": "up",  "unit": "kPa",  "desc": "Pressure mirror, kPa float (AI EP8 — beside the standard 0x0403 cluster)" },
     { "name": "reportIntervalS", "expose": "report_interval_s", "id": 16, "type": "UINT16",  "dir": "down", "unit": "s",   "default": 3, "min": 3, "max": 3600, "desc": "Deep-sleep measurement/report period, seconds (3 s default; raise to 60+ for battery-only operation)" },
     { "name": "gasEnabled",      "expose": "gas_enabled",       "id": 17, "type": "BOOLEAN", "dir": "down", "default": 1,  "desc": "Run the BME680 gas heater each cycle (heater burns ~12 mA for 150 ms; disable to save battery)" }
   ],
@@ -35,12 +32,9 @@
     { "ep": 2, "attr": "gasResistance", "description": "gas ohm" },
     { "ep": 3, "attr": "vbatMv",        "description": "vbat mV" },
     { "ep": 4, "attr": "statusFlags",   "description": "status flags" },
-    { "ep": 5, "attr": "wakeCount",     "description": "wake count" },
-    { "ep": 6, "attr": "tempC",         "description": "temp C" },
-    { "ep": 7, "attr": "humidityPct",   "description": "humidity pct" },
-    { "ep": 8, "attr": "pressureKpa",   "description": "pressure kPa" }
+    { "ep": 5, "attr": "wakeCount",     "description": "wake count" }
   ],
-  "_analogEndpointsNote": "One STANDARD genAnalogInput endpoint per channel, value in presentValue (SINGLE float, stack-reported). Integers ride the float exactly (all < 2^24). wakeCount changes every cycle -> guarantees at least one report per wake, so HA `last_seen` tracks the 3 s cadence even when the environment is static. EP6-8 (v0.1.2): T/RH/P MIRRORS on the AI path — live pairing 2026-07-23 showed the standard 0x0402/0x0403/0x0405/0x0001 measuredValue writes never reaching the wire on esp-zigbee-lib 2.x while every AI presentValue did; the AI path is the one transmit mechanism proven end-to-end on this hardware family. The standard clusters stay (correct interview signature; HA merges both sources into the same entity).",
+  "_analogEndpointsNote": "One STANDARD genAnalogInput endpoint per non-standard channel, value in presentValue (SINGLE float, stack-reported). Integers ride the float exactly (all < 2^24). wakeCount changes every cycle -> guarantees at least one report per wake, so HA `last_seen` tracks the 3 s cadence even when the environment is static. The endpoint budget is deliberately capped at EP1..EP5: field evidence on 2026-07-23 showed that adding T/RH/P mirrors on EP6..EP8 regressed a previously successful 23 s interview into repeated active-endpoint/simple-descriptor timeouts on this sleepy ZED. T/RH/P remain on their standard EP1 clusters.",
   "standardClusters": [
     { "cluster": "Temperature Measurement", "id": 1026, "ep": 1, "attr": "measuredValue", "encoding": "int16, °C × 100",   "source": "BME680 temperature" },
     { "cluster": "Pressure Measurement",    "id": 1027, "ep": 1, "attr": "measuredValue", "encoding": "int16, hPa (0.1 kPa)", "source": "BME680 pressure" },
