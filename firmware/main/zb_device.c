@@ -322,7 +322,11 @@ static void setup_self_reporting(void)
         bind.req_dst_addr  = esp_zb_get_short_address(); // process locally
         esp_zb_zdo_device_bind_req(&bind, bind_done_cb, (void *)(uintptr_t)s->ep);
 
-        // 2. Stack-level reporting slot. min 0 = report immediately on change;
+        // 2. Stack-level reporting slot. min 1 s — the ZED ZBOSS build rejects
+        //    min_interval = 0 with ESP_ERR_INVALID_ARG (field 2026-07-23: every
+        //    slot on every endpoint failed registration; the router builds in
+        //    the sibling projects used min 5..30 and never tripped this). 1 s
+        //    still fits comfortably inside the 2 s report-flush window.
         //    max = heartbeat backstop while awake (the device usually sleeps
         //    long before it fires).
         esp_zb_zcl_reporting_info_t info = {0};
@@ -331,9 +335,9 @@ static void setup_self_reporting(void)
         info.cluster_id   = s->cluster;
         info.cluster_role = ESP_ZB_ZCL_CLUSTER_SERVER_ROLE;
         info.attr_id      = s->attr;
-        info.u.send_info.min_interval     = 0;
+        info.u.send_info.min_interval     = 1;
         info.u.send_info.max_interval     = 3600;
-        info.u.send_info.def_min_interval = 0;
+        info.u.send_info.def_min_interval = 1;
         info.u.send_info.def_max_interval = 3600;
         if (s->analog) info.u.send_info.delta.f32 = 0.0f;  // any change
         else           info.u.send_info.delta.u16 = 0;
