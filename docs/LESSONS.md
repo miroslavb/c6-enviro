@@ -87,3 +87,38 @@ Below: the ones that shaped this firmware, plus everything new.
     **%×1000** (not ×100 like temperature) — divide by 10 for the ZCL encoding.
 24. **"BME860" does not exist** — the Bosch gas-sensor family is BME680/BME688 (same
     registers/API). Wiring and firmware here fit both.
+
+## C. Field bring-up saga (2026-07-23) — open + closed items
+
+25. **Sensor + I²C are perfect** — console shows real `BME680@0x77: T=23–27 °C
+    RH=40–45 % P=98010 Pa gas=…Ω`, calib genuine (`par_t1=26092 par_t2=26574
+    variant=0`). No hardware fault anywhere. Every problem below is firmware/Zigbee.
+26. **`temperature = 0` in HA while RH/P are live** — the standard 0x0402 write path;
+    v0.1.2 added `set temp(0x0402) -> zcl status` logging + T/RH/P MIRRORS on AI
+    EP6-8 as a workaround. NOT root-caused yet (need the zcl-status line from a live
+    join).
+27. **Device-side reporting never registered** — `esp_zb_zcl_update_reporting_info`
+    returned `ESP_ERR_INVALID_ARG` for EVERY slot: the **ZED ZBOSS build rejects
+    `min_interval = 0`** (router builds used 5..30 and never tripped it). Fixed in
+    v0.1.4 → min 1 s. Until v0.1.4, all live data rode Z2M's *coordinator-side*
+    configureReporting only.
+28. **⭐ THE interview regression (user's key hint: "the first interview passed").**
+    v0.1.0 had **5 endpoints** and interviewed in 23 s. v0.1.2 added the T/RH/P
+    mirror endpoints → **8 endpoints**. A sleepy ZED (radio only on during ~1 s
+    parent polls), competing with a Tuya DIN-meter's cluster flood, cannot answer
+    Active_EP_req + 8 simple-descriptor reads before herdsman's interview timeout →
+    `Interview failed ... can not get active endpoints`. The Z2M DB confirms it:
+    `endpoints 1..8, modelId C6-ENVIRO, swBuildId 0.1.0, interviewCompleted:false`.
+    **FIX (v0.1.5, TODO): drop EP6/7/8, return to 5 endpoints; fix temperature
+    properly via the 0x0402 zcl-status finding, not via mirror endpoints.** Fewer
+    endpoints = interview completes = works like v0.1.0. Data DID flow at 03:04
+    (RH/P/battery/gas) even with interviewCompleted:false — so a working interview is
+    not strictly required for telemetry, but it is for a clean, reliable device.
+29. **Operational hazards to avoid next time:** (a) don't `force-remove` + rejoin —
+    it leaves a half-known device that interviews worse than a clean factory-new
+    join; (b) the CH340 coordinator (Z-Stack 20210708) wedges "in bootloader" when
+    the serial port is reopened — every Z2M restart is a gamble against the
+    DIN-meter flood; migrate to the spare ZBDongle-E (ember) — runbook pending;
+    (c) flashing a deep-sleeper needs BOOT-hold→RESET (freeze in ROM loader), the
+    port mirrors with the 3 s sleep cycle otherwise; (d) close the flasher tab
+    before opening the web console — the serial port is exclusive.
