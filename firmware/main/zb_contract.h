@@ -76,4 +76,4 @@
 
 // ---- Power / commissioning constants ----
 #define BATTERY_LOW_MV   3400  // below this -> battery_low status bit
-#define AWAKE_WINDOW_S   300  // stay-awake window after first join / BOOT press (Z2M interview)
+#define AWAKE_WINDOW_S   300  // interview window: first join / BOOT / restored-network cold boot

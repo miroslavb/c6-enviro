@@ -103,7 +103,7 @@ function genHeader() {
   L.push('');
   L.push('// ---- Power / commissioning constants ----');
   L.push(`#define BATTERY_LOW_MV   ${contract.batteryLowMv}  // below this -> battery_low status bit`);
-  L.push(`#define AWAKE_WINDOW_S   ${contract.awakeWindowS}  // stay-awake window after first join / BOOT press (Z2M interview)`);
+  L.push(`#define AWAKE_WINDOW_S   ${contract.awakeWindowS}  // interview window: first join / BOOT / restored-network cold boot`);
   L.push('');
   return L.join('\n');
 }

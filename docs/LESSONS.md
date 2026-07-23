@@ -136,3 +136,12 @@ Below: the ones that shaped this firmware, plus everything new.
     BOOT-extended interview windows. The next deep-sleep boot restores normal sleepy
     RX. Acceptance remains a live `interviewCompleted:true` result — build success is
     not hardware proof.
+31. **Firmware updates preserve Zigbee NVRAM, so fresh steering is not guaranteed.**
+    Live v0.1.6 testing showed `[1,2,3,4,5]` in the Z2M database but repeated
+    `activeEpRsp`, `simpleDescRsp`, and `bindRsp` timeouts. The board announced every
+    wake because flashing the application left `zb_storage` intact: the stack emitted
+    restored-network `JOINED`, not fresh-steering `FIRST_JOIN`, so the v0.1.6 RX window
+    never opened. **v0.1.7 fix:** on a non-timer cold boot with restored network state,
+    enable continuous RX and hold the same five-minute interview window. Timer
+    deep-sleep wakes stay battery-efficient. This is the normal firmware-update path,
+    not an edge case.

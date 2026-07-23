@@ -43,3 +43,18 @@ test("BOOT interview extension requests continuous RX through the Zigbee task", 
   assert.match(button, /zb_device_enable_interview_rx\(\);/);
   assert.match(zbSource, /void zb_device_enable_interview_rx\(void\)/);
 });
+
+test("cold boot with restored Zigbee NVRAM opens a continuous-RX interview window", () => {
+  const restoredStart = mainSource.indexOf("} else if (bits & EVT_JOINED) {");
+  assert.notEqual(restoredStart, -1, "restored-network JOINED branch not found");
+  const restoredEnd = mainSource.indexOf("} else if (s_awake_until_us == 0", restoredStart);
+  assert.notEqual(restoredEnd, -1, "restored-network JOINED branch end not found");
+  const restored = mainSource.slice(restoredStart, restoredEnd);
+
+  assert.match(restored, /if\s*\(first_boot\)/,
+    "a firmware flash/power reset preserves Zigbee NVRAM but must still reopen interview mode");
+  assert.match(restored, /zb_device_enable_interview_rx\(\);/,
+    "restored-network cold boot leaves the radio sleepy during Z2M re-interview");
+  assert.match(restored, /s_awake_until_us\s*=\s*[\s\S]*?AWAKE_WINDOW_S/,
+    "restored-network cold boot does not keep the MCU awake for the interview window");
+});

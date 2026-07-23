@@ -16,7 +16,7 @@ inherited unchanged; what's new is the sleepy-end-device lifecycle.
 | Reporting transport | **Stack reporting engine** (self-binding + `esp_zb_zcl_update_reporting_info`, device min=1 s / delta=0) | The only transmit path that ever emitted frames on this hardware+lib; manual `report_attr_cmd_req` never did (five failed variants on the radiometer). Field evidence showed the ZED build rejects device-side min=0; min=1 still fits in the 2 s flush window. Z2M coordinator-side reporting requests remain min=0. |
 | Sensor | Vendored **Bosch BME68x API v4.4.8** (BSD-3), integer mode, forced T/P/H+gas per wake | Official compensation math; forced mode = one conversion per wake; gas trusted only with `GASM_VALID`+`HEAT_STAB`. |
 | Battery sense | ADC1 (GPIO2) + 2×200 kΩ divider, curve-fitting calibration, 8-sample average | PowerConfig gives % (0.5 % units — Z2M divides by 2) and 100 mV voltage; precise mV rides AI EP3. `batteryVoltage` is NOT stack-reportable (esp-zigbee #463) — reading only. |
-| Interview | **5-minute MCU-awake + continuous-radio-RX window** after fresh steering; five-endpoint budget (EP1..EP5); BOOT re-opens it | `rx_on_when_idle=false` still sleeps the radio even when the MCU remains awake. v0.1.5 proved endpoint reduction alone was insufficient; v0.1.6 enables continuous RX only for commissioning, then deep sleep restores sleepy operation. |
+| Interview | **5-minute MCU-awake + continuous-radio-RX window** after fresh steering, BOOT, or a cold boot with restored Zigbee NVRAM; five-endpoint budget (EP1..EP5) | `rx_on_when_idle=false` still sleeps the radio even when the MCU remains awake. v0.1.5 proved endpoint reduction alone was insufficient; v0.1.6 covered fresh steering but missed firmware updates that preserve `zb_storage`; v0.1.7 also reopens commissioning mode on a non-timer cold boot. Deep-sleep timer wakes remain sleepy. |
 | Join battery guard | 60 s steering budget → sleep 60 s → retry | An unjoined, scanning radio burns ~80 mA and would flatten the cell overnight. |
 
 ## Wake-cycle sequence
@@ -35,7 +35,9 @@ RTC timer ──► boot (skip-validate) ──► NVS config ──► measure 
   (`report_interval_s`, `gas_enabled`) land within one cycle.
 - Factory-new boot instead steers (permit-join must be open), then holds the
   5-minute MCU-awake window **and keeps Zigbee RX continuously on**, reporting every
-  interval without sleeping. The next deep-sleep boot starts sleepy again.
+  interval without sleeping. A power/reset/firmware-update cold boot that restores
+  the existing network from NVRAM opens the same window so Z2M can finish a pending
+  re-interview. Timer deep-sleep wakes stay on the normal sleepy path.
 
 ## Event flow (who owns what)
 

@@ -11,8 +11,10 @@
 //
 // Stay-awake rules (a sleepy device that naps mid-interview never finishes
 // pairing — Z2M FAQ):
-//   * first (factory-new) join → stay awake AWAKE_WINDOW_S (300 s), measuring
-//     and reporting every interval, THEN start sleeping.
+//   * first (factory-new) join OR a cold boot with restored network NVRAM →
+//     stay awake AWAKE_WINDOW_S (300 s), measuring and reporting every interval,
+//     THEN start sleeping. The restored-network case covers firmware updates
+//     while Z2M is retrying an incomplete interview.
 //   * BOOT short press while awake → extend the window by AWAKE_WINDOW_S
 //     (the device is awake ~2.5 s of every cycle — hold the button briefly).
 //   * BOOT long press (3 s) → Zigbee factory reset (buttons.c).
@@ -173,6 +175,20 @@ void app_main(void)
                      AWAKE_WINDOW_S);
         } else if (bits & EVT_JOINED) {
             joined = true;
+            // A firmware flash/power reset preserves zb_storage, so the stack
+            // reports a normal NVRAM restore rather than fresh steering. Z2M
+            // may still be retrying an incomplete interview from the previous
+            // build; reopen the commissioning window on cold boots only. Timer
+            // deep-sleep wakes remain battery-efficient and go straight back
+            // to the normal short report cycle.
+            if (first_boot) {
+                zb_device_enable_interview_rx();
+                s_awake_until_us = esp_timer_get_time() +
+                                   (int64_t)AWAKE_WINDOW_S * 1000000;
+                ESP_LOGI(TAG,
+                         "cold boot with restored network — staying awake %d s for Z2M re-interview",
+                         AWAKE_WINDOW_S);
+            }
         } else if (s_awake_until_us == 0 &&
                    esp_timer_get_time() - t_start >
                        (int64_t)CONFIG_ENVIRO_JOIN_TIMEOUT_S * 1000000) {
