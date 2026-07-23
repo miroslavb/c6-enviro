@@ -43,9 +43,12 @@ Restart Z2M.
 2. Power or reset the board. Factory-new firmware steers immediately; the LED goes
    blue (steering) → green (joined).
 3. **Leave it alone for the next few minutes**: after the first join the device stays
-   awake **5 minutes** so the Z2M interview can finish. If the interview stalls,
-   press **BOOT** briefly to give it another 5-minute window and hit
-   "Reconfigure" in Z2M.
+   awake **5 minutes** but remains a sleepy end device. The first **60 seconds are
+   intentionally quiet** (no telemetry/reporting) while the sleepy device polls its
+   parent every 200 ms so Z2M can finish ZDO discovery. Normal 1 s polling returns
+   automatically before telemetry starts.
+   If the interview stalls, press **BOOT** briefly to extend the bounded MCU-awake
+   window and hit "Reconfigure" in Z2M.
 4. Result: device `C6-ENVIRO` / `Biometal`, type **EndDevice**, entities for
    temperature, humidity, pressure, gas_resistance, battery, voltage, vbat_mv,
    status bits, wake_count + config `report_interval_s`, `gas_enabled`.
@@ -53,13 +56,14 @@ Restart Z2M.
 ### Recovery from the v0.1.2–v0.1.4 interview regression
 
 Those builds exposed eight endpoints and can repeatedly fail with
-`Interview failed because can not get active endpoints`. **v0.1.5 reduced the
-surface but still failed live because its radio remained sleepy during the MCU-awake
-window.** Flash **v0.1.7 or newer**, keep Permit join open, and reset once. v0.1.7
-exposes `[1,2,3,4,5]` and enables continuous Zigbee RX for the five-minute
-commissioning window after fresh steering, a BOOT press, or a firmware-update cold
-boot that restores the existing network from Zigbee NVRAM. `Erase whole flash first`
-is no longer required merely to reopen interview mode. Do not repeatedly
+`Interview failed because can not get active endpoints`. v0.1.5 returned to five
+endpoints; v0.1.6/v0.1.7 then tested continuous RX, but v0.1.7 still failed live
+despite strong uplink telemetry. Flash **v0.1.8 or newer**, keep Permit join open,
+and reset once. v0.1.8 exposes `[1,2,3,4,5]`, keeps `rx_on_when_idle=false`, and
+reserves the first 60 seconds after fresh steering or a firmware-update cold boot
+for 200 ms parent polls and interview responses before enabling its own bind/report
+traffic and restoring 1000 ms polling. `Erase whole
+flash first` is not required merely to reopen interview mode. Do not repeatedly
 force-remove/rejoin the half-interviewed entry: that creates overlapping interview
 attempts and network-address churn. Acceptance is the Z2M database showing
 `interviewCompleted:true`, `interviewState:"SUCCESSFUL"`, and `epList:[1,2,3,4,5]`.
@@ -89,7 +93,7 @@ into your `packages/` and adjust entity ids to your friendly name.
 - **Web console**: https://c6.miroslav.diy/flash/enviro/console/ — auto-reconnects
   across deep-sleep cycles, so you see every wake's log without touching anything.
 - A healthy cycle logs:
-  `C6-ENVIRO v0.1.7 starting (wake #N, deep-sleep wake)` →
+  `C6-ENVIRO v0.1.8 starting (wake #N, deep-sleep wake)` →
   `vbat: …` → `BME680@0x76: T=…` → `network restored from NVRAM` →
   `deep sleep 2… ms`.
 - `factory-new → network steering` in every cycle = the join never succeeded:

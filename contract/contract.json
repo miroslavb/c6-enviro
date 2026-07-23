@@ -52,5 +52,5 @@
   "batteryLowMv": 3400,
   "_batteryLowMvNote": "Below this the battery_low status bit is raised. The %-curve lives in firmware/main/cycle.c (host-tested piecewise Li-ion curve).",
   "awakeWindowS": 300,
-  "_awakeWindowNote": "After a factory-new join, a BOOT-button press, or a non-timer cold boot that restores the existing Zigbee network from NVRAM, the device stays awake this long with continuous RX so the Zigbee2MQTT interview can complete. Timer deep-sleep wakes remain on the normal sleepy path."
+  "_awakeWindowNote": "After a factory-new join, a BOOT-button press, or a non-timer cold boot that restores the existing Zigbee network from NVRAM, the MCU stays awake this long while the radio remains a sleepy, parent-polled ZED. Fresh/cold commissioning reserves the first 60 seconds for quiet ZDO interview traffic, polling the parent every 200 ms, before device-side bind/reporting begins and the normal 1000 ms poll interval is restored. Timer deep-sleep wakes enable reporting immediately and retain the normal low-power path."
 }

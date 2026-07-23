@@ -6,15 +6,17 @@
 //   2. Start Zigbee: deep-sleep wake restores the network from zb_storage
 //      NVRAM (DEVICE_REBOOT); a factory-new device steers (permit-join must be
 //      open in Z2M).
-//   3. On join, push the snapshot; the stack reporting engine transmits; after
-//      the flush window → deep sleep for (interval − time awake).
+//   3. On a commissioning join/cold boot, reserve a quiet 60 s interval for
+//      Z2M's ZDO interview before enabling bind/report traffic. On normal timer
+//      wakes reporting is enabled immediately. Push the snapshot only after the
+//      reporting-ready event, then deep sleep after the flush window.
 //
 // Stay-awake rules (a sleepy device that naps mid-interview never finishes
 // pairing — Z2M FAQ):
 //   * first (factory-new) join OR a cold boot with restored network NVRAM →
-//     stay awake AWAKE_WINDOW_S (300 s), measuring and reporting every interval,
-//     THEN start sleeping. The restored-network case covers firmware updates
-//     while Z2M is retrying an incomplete interview.
+//     stay awake AWAKE_WINDOW_S (300 s). The first 60 s remain quiet except for
+//     sleepy-parent polls and interview responses; only then does telemetry start.
+//     The restored-network case covers firmware updates while Z2M is retrying.
 //   * BOOT short press while awake → extend the window by AWAKE_WINDOW_S
 //     (the device is awake ~2.5 s of every cycle — hold the button briefly).
 //   * BOOT long press (3 s) → Zigbee factory reset (buttons.c).
@@ -57,6 +59,7 @@ static RTC_DATA_ATTR uint16_t s_rtc_prev_awake_ms = 0;
 #define EVT_FIRST_JOIN  BIT1
 #define EVT_FLUSHED     BIT2
 #define EVT_LEFT        BIT3
+#define EVT_REPORTING_READY BIT4
 static EventGroupHandle_t s_events;
 
 // Awake-window end, µs since boot (0 = no window: sleep after first flush).
@@ -67,6 +70,7 @@ static void zb_event_handler(zb_event_t evt)
     switch (evt) {
     case ZB_EVT_JOINED:         xEventGroupSetBits(s_events, EVT_JOINED); break;
     case ZB_EVT_FIRST_JOIN:     xEventGroupSetBits(s_events, EVT_FIRST_JOIN); break;
+    case ZB_EVT_REPORTING_READY:xEventGroupSetBits(s_events, EVT_REPORTING_READY); break;
     case ZB_EVT_REPORT_FLUSHED: xEventGroupSetBits(s_events, EVT_FLUSHED); break;
     case ZB_EVT_LEFT:           xEventGroupSetBits(s_events, EVT_LEFT); break;
     case ZB_EVT_JOIN_FAILED:    /* main polls the timeout budget */ break;
@@ -75,9 +79,8 @@ static void zb_event_handler(zb_event_t evt)
 
 static void on_button_short_press(void)
 {
-    // Z2M FAQ pattern: a button press keeps the battery device awake — used
-    // during pairing/interview and for on-demand debugging.
-    zb_device_enable_interview_rx();
+    // Extend only the bounded MCU-awake window. The solar sensor remains a
+    // sleepy, parent-polled ZED; BOOT must never switch it to always-on RX.
     s_awake_until_us = esp_timer_get_time() + (int64_t)AWAKE_WINDOW_S * 1000000;
     ESP_LOGI(TAG, "BOOT press: staying awake %d s", AWAKE_WINDOW_S);
     led_show_status(LED_STATUS_JOINING);
@@ -121,6 +124,20 @@ static void go_to_sleep(uint32_t sleep_ms)
     esp_deep_sleep_start();
 }
 
+static bool wait_for_reporting_ready(void)
+{
+    EventBits_t bits = xEventGroupWaitBits(
+        s_events, EVT_REPORTING_READY | EVT_LEFT, pdTRUE, pdFALSE,
+        pdMS_TO_TICKS(AWAKE_WINDOW_S * 1000));
+    if (bits & EVT_LEFT) {
+        ESP_LOGW(TAG, "left network before reporting became ready");
+        return false;
+    }
+    if (bits & EVT_REPORTING_READY) return true;
+    ESP_LOGW(TAG, "reporting setup did not become ready inside the awake window");
+    return false;
+}
+
 void app_main(void)
 {
     const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
@@ -158,7 +175,7 @@ void app_main(void)
 
     // 5. Zigbee.
     s_events = xEventGroupCreate();
-    ESP_ERROR_CHECK(zb_device_start(zb_event_handler));
+    ESP_ERROR_CHECK(zb_device_start(zb_event_handler, first_boot));
 
     // 6. Wait for the network (NVRAM restore is fast; steering can take a
     //    while and only succeeds with permit-join open).
@@ -182,7 +199,6 @@ void app_main(void)
             // deep-sleep wakes remain battery-efficient and go straight back
             // to the normal short report cycle.
             if (first_boot) {
-                zb_device_enable_interview_rx();
                 s_awake_until_us = esp_timer_get_time() +
                                    (int64_t)AWAKE_WINDOW_S * 1000000;
                 ESP_LOGI(TAG,
@@ -196,6 +212,13 @@ void app_main(void)
                      CONFIG_ENVIRO_JOIN_TIMEOUT_S, CONFIG_ENVIRO_RETRY_SLEEP_S);
             go_to_sleep((uint32_t)CONFIG_ENVIRO_RETRY_SLEEP_S * 1000u);
         }
+    }
+
+    // The Zigbee task owns reporting setup. On a fresh join or cold boot it
+    // deliberately emits this only after the 60 s no-uplink interview phase;
+    // timer wakes schedule it immediately. Never push attributes before it.
+    if (!wait_for_reporting_ready()) {
+        go_to_sleep((uint32_t)CONFIG_ENVIRO_RETRY_SLEEP_S * 1000u);
     }
 
     // 7. Cycle loop: push → flush → (sleep | stay awake and re-measure).
@@ -214,6 +237,9 @@ void app_main(void)
                                        pdTRUE, pdFALSE,
                                        pdMS_TO_TICKS(CONFIG_ENVIRO_JOIN_TIMEOUT_S * 1000));
             if (!(bits & (EVT_JOINED | EVT_FIRST_JOIN))) {
+                go_to_sleep((uint32_t)CONFIG_ENVIRO_RETRY_SLEEP_S * 1000u);
+            }
+            if (!wait_for_reporting_ready()) {
                 go_to_sleep((uint32_t)CONFIG_ENVIRO_RETRY_SLEEP_S * 1000u);
             }
             continue;   // re-push the same measurement after rejoin

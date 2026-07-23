@@ -125,23 +125,27 @@ Below: the ones that shaped this firmware, plus everything new.
     (c) flashing a deep-sleeper needs BOOT-hold→RESET (freeze in ROM loader), the
     port mirrors with the 3 s sleep cycle otherwise; (d) close the flasher tab
     before opening the web console — the serial port is exclusive.
-30. **⭐ Actual radio-level interview root cause (v0.1.5 falsified the endpoint-only
-    hypothesis).** v0.1.5 returned to five endpoints, but fresh hardware interviews
-    at 04:56–05:00 still failed on `activeEpRsp` while the device announced itself.
-    The five-minute "awake" window kept the MCU running but left
-    `rx_on_when_idle=false`, so the Zigbee RADIO still slept between 1 s parent polls;
-    herdsman's requests routinely arrived outside those narrow poll windows.
-    **v0.1.6 fix:** preserve the sleepy capability during association, then call
-    `esp_zb_set_rx_on_when_idle(true)` immediately after successful steering and for
-    BOOT-extended interview windows. The next deep-sleep boot restores normal sleepy
-    RX. Acceptance remains a live `interviewCompleted:true` result — build success is
-    not hardware proof.
-31. **Firmware updates preserve Zigbee NVRAM, so fresh steering is not guaranteed.**
-    Live v0.1.6 testing showed `[1,2,3,4,5]` in the Z2M database but repeated
-    `activeEpRsp`, `simpleDescRsp`, and `bindRsp` timeouts. The board announced every
-    wake because flashing the application left `zb_storage` intact: the stack emitted
-    restored-network `JOINED`, not fresh-steering `FIRST_JOIN`, so the v0.1.6 RX window
-    never opened. **v0.1.7 fix:** on a non-timer cold boot with restored network state,
-    enable continuous RX and hold the same five-minute interview window. Timer
-    deep-sleep wakes stay battery-efficient. This is the normal firmware-update path,
-    not an edge case.
+30. **The continuous-RX hypothesis was falsified, not validated.** v0.1.5 returned
+    to five endpoints but still failed `activeEpRsp`; v0.1.6 then changed the joined
+    ZED to `rx_on_when_idle=true`. That was only a hypothesis and never passed the
+    required hardware gate. It also conflicts with the user's solar/battery contract:
+    Enviro must remain a sleepy, parent-polled end device on every path.
+31. **Firmware updates preserve Zigbee NVRAM, so fresh steering is not guaranteed —
+    but reopening continuous RX did not solve it.** v0.1.7 added a cold-boot path for
+    restored-network `JOINED`. Under a fully started, stable Z2M with the Supervisor
+    watchdog disabled, the board delivered dense uplink telemetry at LQI 84–93 while
+    herdsman still failed active endpoints. The database remained
+    `interviewCompleted:false`, `interviewState:FAILED`, `epList:[1,2,3,4,5]`.
+32. **The regression boundary is reporting activation, so commissioning must be
+    phase-separated.** v0.1.0 interviewed in 23 s with five endpoints while its
+    device-side reporting slots were rejected (`min_interval=0`). v0.1.4 made those
+    slots work with min=1; from then on the device started eight self-bind/reporting
+    workloads at the same moment as herdsman's ZDO interview. Data reached Z2M/HA,
+    but active-endpoint discovery failed. **v0.1.8 candidate:** keep
+    `rx_on_when_idle=false`, hold the MCU awake, emit no device-side bind/report
+    traffic for the first 60 s after fresh/cold commissioning, and temporarily
+    reduce the parent-poll interval from 1000 ms to 200 ms so buffered indirect ZDO
+    requests are fetched promptly. Restore 1000 ms before configuring reporting and
+    releasing the first measurement. Timer wakes skip the delay. This
+    remains a candidate until live Z2M records `interviewCompleted:true` with
+    `[1,2,3,4,5]` and the current `swBuildId`.

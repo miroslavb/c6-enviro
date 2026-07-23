@@ -19,8 +19,8 @@
 //     defensively (a corrupted partition is erased, not abort()ed on).
 //
 // New for the sleepy end device:
-//   * role = ESP_ZB_DEVICE_TYPE_ED with rx_on_when_idle = false, keep_alive
-//     1 s (each short wake also picks up queued HA writes), ed_timeout 64 min.
+//   * role = ESP_ZB_DEVICE_TYPE_ED with rx_on_when_idle = false, normal
+//     keep_alive 1 s (temporarily 200 ms during commissioning), ed_timeout 64 min.
 //   * After deep sleep the stack restores the network from zb_storage NVRAM —
 //     the DEVICE_REBOOT signal arrives with the network up, no steering.
 //   * The wake cycle is sequenced by events back to main.c, which owns the
@@ -32,6 +32,7 @@
 #include <string.h>
 
 #include "esp_zigbee_core.h"
+#include "ezbee/nwk.h"
 #include "esp_check.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
@@ -56,10 +57,13 @@ static const char *TAG = "zb_device";
 // gas_enabled) reach the device promptly.
 #define ED_KEEP_ALIVE_MS             1000
 #define STEER_RETRY_MS               5000
+#define INTERVIEW_QUIET_MS           60000u
+#define INTERVIEW_POLL_MS            200u
 
 static zb_event_cb_t s_event_cb = NULL;
 static bool s_joined = false;
 static bool s_factory_new_boot = false;
+static bool s_commissioning_boot = false;
 
 static void emit(zb_event_t evt)
 {
@@ -262,8 +266,8 @@ static esp_zb_ep_list_t *build_endpoint(void)
 // The one transmit path proven on this hardware+lib: bind each reported
 // cluster to the coordinator, register stack reporting slots, mirror values
 // into the attribute store — the STACK emits the attributeReport frames.
-// min_interval = 0 → an attribute change reports immediately (crucial for the
-// 3 s deep-sleep cadence: the report must go out inside the flush window).
+// min_interval = 1 is the smallest value accepted by this ZED build; the 2 s
+// flush window gives a changed attribute time to report before deep sleep.
 typedef struct { uint8_t ep; uint16_t cluster; uint16_t attr; bool analog; } rep_slot_t;
 static const rep_slot_t REPORT_SLOTS[] = {
     { HA_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT,
@@ -344,6 +348,37 @@ static void setup_self_reporting(void)
         }
     }
     ESP_LOGI(TAG, "device-side reporting configured (%u slots)", (unsigned)REPORT_SLOT_COUNT);
+}
+
+static void setup_self_reporting_cb(uint8_t param)
+{
+    (void)param;
+    // The interview phase is over. Restore the normal low-duty parent-poll
+    // interval before device-side bind/report traffic begins.
+    ezb_nwk_set_keepalive_interval(ED_KEEP_ALIVE_MS);
+    setup_self_reporting();
+    emit(ZB_EVT_REPORTING_READY);
+}
+
+static void schedule_self_reporting(bool quiet)
+{
+    const uint32_t delay_ms = quiet ? INTERVIEW_QUIET_MS : 1u;
+    // At most one delayed setup may survive. A quick leave/rejoin must start a
+    // fresh quiet phase instead of inheriting the old join's nearly-expired alarm.
+    esp_zb_scheduler_alarm_cancel(setup_self_reporting_cb, 0);
+    if (quiet) {
+        // Stay a sleepy child and fetch the parent's indirect ZDO frames often.
+        // This avoids the v0.1.7 parent/local rx_on_when_idle mismatch without
+        // paying the permanent current cost of an always-on receiver.
+        ezb_nwk_set_keepalive_interval(INTERVIEW_POLL_MS);
+        ESP_LOGI(TAG,
+                 "commissioning: %u ms quiet ZDO phase, parent poll every %u ms",
+                 (unsigned)delay_ms, (unsigned)INTERVIEW_POLL_MS);
+    } else {
+        ezb_nwk_set_keepalive_interval(ED_KEEP_ALIVE_MS);
+        ESP_LOGI(TAG, "normal wake: enabling reporting");
+    }
+    esp_zb_scheduler_alarm(setup_self_reporting_cb, 0, delay_ms);
 }
 
 // ===========================================================================
@@ -443,20 +478,6 @@ void zb_device_push_measurement(void)
 {
     // Marshal onto the Zigbee stack task; 1 ms ≈ "next scheduler iteration".
     esp_zb_scheduler_alarm(push_cb, 0, 1);
-}
-
-static void enable_interview_rx_cb(uint8_t param)
-{
-    (void)param;
-    esp_zb_set_rx_on_when_idle(true);
-    ESP_LOGI(TAG, "interview mode: continuous Zigbee RX enabled until deep sleep");
-}
-
-void zb_device_enable_interview_rx(void)
-{
-    // BOOT callback runs outside the Zigbee task; use the same scheduler
-    // marshalling pattern as measurement pushes.
-    esp_zb_scheduler_alarm(enable_interview_rx_cb, 0, 1);
 }
 
 // ===========================================================================
@@ -561,7 +582,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
                          esp_zb_get_pan_id(), esp_zb_get_current_channel(),
                          esp_zb_get_short_address());
                 s_joined = true;
-                setup_self_reporting();
+                schedule_self_reporting(s_commissioning_boot);
                 emit(ZB_EVT_JOINED);
             }
         } else {
@@ -578,15 +599,12 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
                      esp_zb_get_pan_id(), esp_zb_get_current_channel(),
                      esp_zb_get_short_address());
             s_joined = true;
-            // Keeping the MCU awake is not enough for a sleepy ZED: with
-            // rx_on_when_idle=false the RADIO still sleeps between 1 s parent
-            // polls, and Z2M's active-endpoint requests repeatedly time out.
-            // Preserve the sleepy capability advertised during association,
-            // then turn continuous RX on only for this five-minute interview
-            // boot. Deep sleep resets the stack and restores false next wake.
-            esp_zb_set_rx_on_when_idle(true);
             led_show_status(LED_STATUS_JOINED);
-            setup_self_reporting();
+            // v0.1.0 completed the five-endpoint interview while reporting slots
+            // were inactive. Once min_interval=1 made reporting work, starting
+            // eight self-binds + reports here starved the concurrent ZDO interview.
+            // Keep the ZED sleepy/poll-based and phase-separate those workloads.
+            schedule_self_reporting(true);
             // v0.1.3: a STEERING success is ALWAYS a fresh association (we only
             // steer when off-network) and Z2M will (re)interview after it — so
             // ALWAYS hold the stay-awake window, not just on factory-new boots.
@@ -609,6 +627,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         if (s_joined) {
             ESP_LOGW(TAG, "left the network — restarting steering");
             s_joined = false;
+            esp_zb_scheduler_alarm_cancel(setup_self_reporting_cb, 0);
             schedule_steering_retry(1000);
             emit(ZB_EVT_LEFT);
         } else {
@@ -664,9 +683,10 @@ static void zb_task(void *arg)
     esp_zb_stack_main_loop();  // never returns
 }
 
-esp_err_t zb_device_start(zb_event_cb_t cb)
+esp_err_t zb_device_start(zb_event_cb_t cb, bool commissioning_boot)
 {
     s_event_cb = cb;
+    s_commissioning_boot = commissioning_boot;
 
     // zb_storage: esp-zigbee-lib 2.x datasets live in this NVS partition
     // (subtype MUST be nvs — the 1.x-era `fat` subtype makes

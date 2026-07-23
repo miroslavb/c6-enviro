@@ -52,8 +52,9 @@ bash scripts/build-firmware.sh          # → web/firmware/*.bin + manifest.json
 #    serve web/ behind HTTPS → https://c6.miroslav.diy/flash/enviro/
 
 # 4. Pair: install z2m/ converter → restart Z2M → Permit join → reset the board.
-#    It stays awake 5 minutes after a fresh join or firmware-update cold boot so
-#    the interview can complete even when Zigbee NVRAM was preserved.
+#    It stays awake 5 minutes after a fresh join or firmware-update cold boot.
+#    The radio remains sleepy; the first 60 s use short 200 ms parent polls and
+#    intentionally carry only interview traffic, then normal reporting starts.
 ```
 
 Full setup: [`docs/INTEGRATION.md`](docs/INTEGRATION.md) · design rationale:
