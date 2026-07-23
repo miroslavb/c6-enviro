@@ -125,3 +125,14 @@ Below: the ones that shaped this firmware, plus everything new.
     (c) flashing a deep-sleeper needs BOOT-hold→RESET (freeze in ROM loader), the
     port mirrors with the 3 s sleep cycle otherwise; (d) close the flasher tab
     before opening the web console — the serial port is exclusive.
+30. **⭐ Actual radio-level interview root cause (v0.1.5 falsified the endpoint-only
+    hypothesis).** v0.1.5 returned to five endpoints, but fresh hardware interviews
+    at 04:56–05:00 still failed on `activeEpRsp` while the device announced itself.
+    The five-minute "awake" window kept the MCU running but left
+    `rx_on_when_idle=false`, so the Zigbee RADIO still slept between 1 s parent polls;
+    herdsman's requests routinely arrived outside those narrow poll windows.
+    **v0.1.6 fix:** preserve the sleepy capability during association, then call
+    `esp_zb_set_rx_on_when_idle(true)` immediately after successful steering and for
+    BOOT-extended interview windows. The next deep-sleep boot restores normal sleepy
+    RX. Acceptance remains a live `interviewCompleted:true` result — build success is
+    not hardware proof.

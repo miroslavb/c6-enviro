@@ -445,6 +445,20 @@ void zb_device_push_measurement(void)
     esp_zb_scheduler_alarm(push_cb, 0, 1);
 }
 
+static void enable_interview_rx_cb(uint8_t param)
+{
+    (void)param;
+    esp_zb_set_rx_on_when_idle(true);
+    ESP_LOGI(TAG, "interview mode: continuous Zigbee RX enabled until deep sleep");
+}
+
+void zb_device_enable_interview_rx(void)
+{
+    // BOOT callback runs outside the Zigbee task; use the same scheduler
+    // marshalling pattern as measurement pushes.
+    esp_zb_scheduler_alarm(enable_interview_rx_cb, 0, 1);
+}
+
 // ===========================================================================
 // SET_ATTR write router (HA config writes)
 // ===========================================================================
@@ -564,6 +578,13 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
                      esp_zb_get_pan_id(), esp_zb_get_current_channel(),
                      esp_zb_get_short_address());
             s_joined = true;
+            // Keeping the MCU awake is not enough for a sleepy ZED: with
+            // rx_on_when_idle=false the RADIO still sleeps between 1 s parent
+            // polls, and Z2M's active-endpoint requests repeatedly time out.
+            // Preserve the sleepy capability advertised during association,
+            // then turn continuous RX on only for this five-minute interview
+            // boot. Deep sleep resets the stack and restores false next wake.
+            esp_zb_set_rx_on_when_idle(true);
             led_show_status(LED_STATUS_JOINED);
             setup_self_reporting();
             // v0.1.3: a STEERING success is ALWAYS a fresh association (we only

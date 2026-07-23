@@ -53,9 +53,11 @@ Restart Z2M.
 ### Recovery from the v0.1.2–v0.1.4 interview regression
 
 Those builds exposed eight endpoints and can repeatedly fail with
-`Interview failed because can not get active endpoints`. Flash **v0.1.5 or newer**
-with **Erase whole flash first**, keep Permit join open, and reset once. v0.1.5
-returns to the proven five-endpoint surface (`[1,2,3,4,5]`). Do not repeatedly
+`Interview failed because can not get active endpoints`. **v0.1.5 reduced the
+surface but still failed live because its radio remained sleepy during the MCU-awake
+window.** Flash **v0.1.6 or newer** with **Erase whole flash first**, keep Permit
+join open, and reset once. v0.1.6 exposes `[1,2,3,4,5]` and enables continuous
+Zigbee RX only for the five-minute commissioning window. Do not repeatedly
 force-remove/rejoin the half-interviewed entry: that creates overlapping interview
 attempts and network-address churn. Acceptance is the Z2M database showing
 `interviewCompleted:true`, `interviewState:"SUCCESSFUL"`, and `epList:[1,2,3,4,5]`.
@@ -85,7 +87,7 @@ into your `packages/` and adjust entity ids to your friendly name.
 - **Web console**: https://c6.miroslav.diy/flash/enviro/console/ — auto-reconnects
   across deep-sleep cycles, so you see every wake's log without touching anything.
 - A healthy cycle logs:
-  `C6-ENVIRO v0.1.5 starting (wake #N, deep-sleep wake)` →
+  `C6-ENVIRO v0.1.6 starting (wake #N, deep-sleep wake)` →
   `vbat: …` → `BME680@0x76: T=…` → `network restored from NVRAM` →
   `deep sleep 2… ms`.
 - `factory-new → network steering` in every cycle = the join never succeeded:

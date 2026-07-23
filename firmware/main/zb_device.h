@@ -35,6 +35,11 @@ esp_err_t zb_device_start(zb_event_cb_t cb);
 // task via the Zigbee scheduler).
 void zb_device_push_measurement(void);
 
+// Keep the Zigbee receiver continuously on for a commissioning/re-interview
+// window. Safe from any task: marshalled onto the Zigbee stack task. The next
+// deep-sleep boot restores the normal sleepy rx_on_when_idle=false policy.
+void zb_device_enable_interview_rx(void);
+
 // Erase the Zigbee NVRAM and reboot factory-new (BOOT long-press).
 void zb_device_factory_reset(void);
 

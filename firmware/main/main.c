@@ -75,6 +75,7 @@ static void on_button_short_press(void)
 {
     // Z2M FAQ pattern: a button press keeps the battery device awake — used
     // during pairing/interview and for on-demand debugging.
+    zb_device_enable_interview_rx();
     s_awake_until_us = esp_timer_get_time() + (int64_t)AWAKE_WINDOW_S * 1000000;
     ESP_LOGI(TAG, "BOOT press: staying awake %d s", AWAKE_WINDOW_S);
     led_show_status(LED_STATUS_JOINING);
