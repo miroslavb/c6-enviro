@@ -104,6 +104,51 @@ export const CONTRACT = {
       "desc": "BME680 gas sensor resistance, ohms (higher = cleaner air); mirrored on AI EP2"
     },
     {
+      "name": "tempC",
+      "expose": "temperature",
+      "id": 5,
+      "type": "SINGLE",
+      "zclType": 57,
+      "dir": "up",
+      "unit": "°C",
+      "min": null,
+      "max": null,
+      "default": null,
+      "optional": false,
+      "report": false,
+      "desc": "Temperature mirror, °C float (AI EP6 — belt-and-braces beside the standard 0x0402 cluster)"
+    },
+    {
+      "name": "humidityPct",
+      "expose": "humidity",
+      "id": 6,
+      "type": "SINGLE",
+      "zclType": 57,
+      "dir": "up",
+      "unit": "%",
+      "min": null,
+      "max": null,
+      "default": null,
+      "optional": false,
+      "report": false,
+      "desc": "Relative-humidity mirror, %% float (AI EP7 — beside the standard 0x0405 cluster)"
+    },
+    {
+      "name": "pressureKpa",
+      "expose": "pressure",
+      "id": 7,
+      "type": "SINGLE",
+      "zclType": 57,
+      "dir": "up",
+      "unit": "kPa",
+      "min": null,
+      "max": null,
+      "default": null,
+      "optional": false,
+      "report": false,
+      "desc": "Pressure mirror, kPa float (AI EP8 — beside the standard 0x0403 cluster)"
+    },
+    {
       "name": "reportIntervalS",
       "expose": "report_interval_s",
       "id": 16,
@@ -154,6 +199,21 @@ export const CONTRACT = {
       "ep": 5,
       "attr": "wakeCount",
       "description": "wake count"
+    },
+    {
+      "ep": 6,
+      "attr": "tempC",
+      "description": "temp C"
+    },
+    {
+      "ep": 7,
+      "attr": "humidityPct",
+      "description": "humidity pct"
+    },
+    {
+      "ep": 8,
+      "attr": "pressureKpa",
+      "description": "pressure kPa"
     }
   ],
   "standardClusters": [

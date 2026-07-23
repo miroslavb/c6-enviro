@@ -285,6 +285,14 @@ static const rep_slot_t REPORT_SLOTS[] = {
       ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, true },
     { AI_EP_WAKE_COUNT, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
       ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, true },
+    // v0.1.2: T/RH/P mirrors — live pairing 2026-07-23 showed the standard
+    // measurement-cluster values never reaching HA while every AI channel did.
+    { AI_EP_TEMP_C, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
+      ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, true },
+    { AI_EP_HUMIDITY_PCT, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
+      ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, true },
+    { AI_EP_PRESSURE_KPA, ESP_ZB_ZCL_CLUSTER_ID_ANALOG_INPUT,
+      ESP_ZB_ZCL_ATTR_ANALOG_INPUT_PRESENT_VALUE_ID, true },
 };
 #define REPORT_SLOT_COUNT (sizeof(REPORT_SLOTS) / sizeof(REPORT_SLOTS[0]))
 
@@ -365,29 +373,37 @@ static void push_cb(uint8_t param)
     const enviro_measurement_t *m = &g_measurement;
 
     // ---- EP1 standard clusters ----
+    // v0.1.2: capture + log every set status — the field mystery is WHY these
+    // values never reach HA while the AI channels do.
+    esp_zb_zcl_status_t zst;
     if (m->sensor_ok) {
         s_temp_c100 = (int16_t)m->temp_c100;
         s_hum_c100  = (uint16_t)m->hum_c100;
         s_press_hpa = (int16_t)((m->press_pa + 50) / 100);   // Pa → hPa (0.1 kPa)
-        esp_zb_zcl_set_attribute_val(HA_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT,
+        zst = esp_zb_zcl_set_attribute_val(HA_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT,
             ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
             ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, &s_temp_c100, false);
-        esp_zb_zcl_set_attribute_val(HA_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT,
+        if (zst != ESP_ZB_ZCL_STATUS_SUCCESS) ESP_LOGW(TAG, "set temp(0x0402)=%d -> zcl status 0x%02x", s_temp_c100, zst);
+        zst = esp_zb_zcl_set_attribute_val(HA_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT,
             ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
             ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, &s_hum_c100, false);
-        esp_zb_zcl_set_attribute_val(HA_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_PRESSURE_MEASUREMENT,
+        if (zst != ESP_ZB_ZCL_STATUS_SUCCESS) ESP_LOGW(TAG, "set hum(0x0405)=%u -> zcl status 0x%02x", s_hum_c100, zst);
+        zst = esp_zb_zcl_set_attribute_val(HA_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_PRESSURE_MEASUREMENT,
             ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
             ESP_ZB_ZCL_ATTR_PRESSURE_MEASUREMENT_VALUE_ID, &s_press_hpa, false);
+        if (zst != ESP_ZB_ZCL_STATUS_SUCCESS) ESP_LOGW(TAG, "set press(0x0403)=%d -> zcl status 0x%02x", s_press_hpa, zst);
     }
     if (m->vbat_ok) {
         s_batt_voltage = cycle_battery_voltage_zcl(m->vbat_mv);
         s_batt_pct     = cycle_battery_percent_zcl(m->vbat_mv);
-        esp_zb_zcl_set_attribute_val(HA_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
+        zst = esp_zb_zcl_set_attribute_val(HA_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
             ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
             ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_VOLTAGE_ID, &s_batt_voltage, false);
-        esp_zb_zcl_set_attribute_val(HA_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
+        if (zst != ESP_ZB_ZCL_STATUS_SUCCESS) ESP_LOGW(TAG, "set batt V -> zcl status 0x%02x", zst);
+        zst = esp_zb_zcl_set_attribute_val(HA_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_POWER_CONFIG,
             ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
             ESP_ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_PERCENTAGE_REMAINING_ID, &s_batt_pct, false);
+        if (zst != ESP_ZB_ZCL_STATUS_SUCCESS) ESP_LOGW(TAG, "set batt %% -> zcl status 0x%02x", zst);
     }
 
     // ---- Status bitmask + custom diagnostics ----
@@ -421,6 +437,12 @@ static void push_cb(uint8_t param)
     set_ai_present_value(AI_EP_VBAT_MV,        (float)m->vbat_mv);
     set_ai_present_value(AI_EP_STATUS_FLAGS,   (float)s_status);
     set_ai_present_value(AI_EP_WAKE_COUNT,     (float)m->wake_count);
+    if (m->sensor_ok) {
+        // v0.1.2 T/RH/P mirrors, already in human units: °C / % / kPa.
+        set_ai_present_value(AI_EP_TEMP_C,       (float)m->temp_c100 / 100.0f);
+        set_ai_present_value(AI_EP_HUMIDITY_PCT, (float)m->hum_c100 / 100.0f);
+        set_ai_present_value(AI_EP_PRESSURE_KPA, (float)m->press_pa / 1000.0f);
+    }
 
     // Give the stack engine + parent polling a window to move the frames out,
     // then let main decide (sleep / stay awake).

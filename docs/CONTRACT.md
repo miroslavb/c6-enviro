@@ -26,6 +26,9 @@ Z2M decodes these natively (zero custom glue): `temperature`, `humidity`, `press
 | 3 | vbat mV | `vbatMv` |
 | 4 | status flags | `statusFlags` |
 | 5 | wake count | `wakeCount` |
+| 6 | temp C | `tempC` |
+| 7 | humidity pct | `humidityPct` |
+| 8 | pressure kPa | `pressureKpa` |
 
 The Z2M addon cannot decode INCOMING custom-cluster frames (endpoint→registry lookup loses the attached cluster → `msg.cluster` undefined → no converter matches; proven live 2026-07-11 on c6-radiometer). Non-standard telemetry therefore travels on STANDARD `genAnalogInput` clusters — one endpoint per channel, value in `presentValue` (SINGLE float), reported by the stack engine. `wakeCount` changes every cycle, guaranteeing ≥1 report per wake.
 
@@ -38,6 +41,9 @@ The Z2M addon cannot decode INCOMING custom-cluster frames (endpoint→registry 
 | `vbatMv` | `vbat_mv` | 0x0002 | UINT16 | up | mV | — | — | Battery voltage, millivolts (precise; PowerConfig 0x0020 only has 100 mV steps) |
 | `awakeMs` | `awake_ms` | 0x0003 | UINT16 | up | ms | — | — | Duration of the previous wake cycle, ms (deep-sleep duty-cycle diagnostic) |
 | `gasResistance` | `gas_resistance` | 0x0004 | SINGLE | up | Ω | — | — | BME680 gas sensor resistance, ohms (higher = cleaner air); mirrored on AI EP2 |
+| `tempC` | `temperature` | 0x0005 | SINGLE | up | °C | — | — | Temperature mirror, °C float (AI EP6 — belt-and-braces beside the standard 0x0402 cluster) |
+| `humidityPct` | `humidity` | 0x0006 | SINGLE | up | % | — | — | Relative-humidity mirror, %% float (AI EP7 — beside the standard 0x0405 cluster) |
+| `pressureKpa` | `pressure` | 0x0007 | SINGLE | up | kPa | — | — | Pressure mirror, kPa float (AI EP8 — beside the standard 0x0403 cluster) |
 | `reportIntervalS` | `report_interval_s` | 0x0010 | UINT16 | down | s | 3 | 3…3600 | Deep-sleep measurement/report period, seconds (3 s default; raise to 60+ for battery-only operation) |
 | `gasEnabled` | `gas_enabled` | 0x0011 | BOOLEAN | down | — | 1 | — | Run the BME680 gas heater each cycle (heater burns ~12 mA for 150 ms; disable to save battery) |
 

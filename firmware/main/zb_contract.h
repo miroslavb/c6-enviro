@@ -29,6 +29,15 @@
 // gasResistance (up, Ω): BME680 gas sensor resistance, ohms (higher = cleaner air); mirrored on AI EP2
 #define ATTR_GAS_RESISTANCE      0x0004
 #define ATTRTYPE_GAS_RESISTANCE  0x39  // ESP_ZB_ZCL_ATTR_TYPE_SINGLE
+// tempC (up, °C): Temperature mirror, °C float (AI EP6 — belt-and-braces beside the standard 0x0402 cluster)
+#define ATTR_TEMP_C      0x0005
+#define ATTRTYPE_TEMP_C  0x39  // ESP_ZB_ZCL_ATTR_TYPE_SINGLE
+// humidityPct (up, %): Relative-humidity mirror, %% float (AI EP7 — beside the standard 0x0405 cluster)
+#define ATTR_HUMIDITY_PCT      0x0006
+#define ATTRTYPE_HUMIDITY_PCT  0x39  // ESP_ZB_ZCL_ATTR_TYPE_SINGLE
+// pressureKpa (up, kPa): Pressure mirror, kPa float (AI EP8 — beside the standard 0x0403 cluster)
+#define ATTR_PRESSURE_KPA      0x0007
+#define ATTRTYPE_PRESSURE_KPA  0x39  // ESP_ZB_ZCL_ATTR_TYPE_SINGLE
 // reportIntervalS (down, s): Deep-sleep measurement/report period, seconds (3 s default; raise to 60+ for battery-only operation)
 #define ATTR_REPORT_INTERVAL_S      0x0010
 #define ATTRTYPE_REPORT_INTERVAL_S  0x21  // ESP_ZB_ZCL_ATTR_TYPE_U16
@@ -63,15 +72,21 @@
 #define AI_EP_VBAT_MV   3   // vbat mV
 #define AI_EP_STATUS_FLAGS   4   // status flags
 #define AI_EP_WAKE_COUNT   5   // wake count
+#define AI_EP_TEMP_C   6   // temp C
+#define AI_EP_HUMIDITY_PCT   7   // humidity pct
+#define AI_EP_PRESSURE_KPA   8   // pressure kPa
 #define AI_EP_FIRST   2
-#define AI_EP_LAST    5
-#define AI_EP_COUNT   4
+#define AI_EP_LAST    8
+#define AI_EP_COUNT   7
 // {endpoint, description} rows for cluster-construction loops.
 #define AI_CHANNELS_INIT { \
     { AI_EP_GAS_RESISTANCE, "gas ohm" }, \
     { AI_EP_VBAT_MV, "vbat mV" }, \
     { AI_EP_STATUS_FLAGS, "status flags" }, \
     { AI_EP_WAKE_COUNT, "wake count" }, \
+    { AI_EP_TEMP_C, "temp C" }, \
+    { AI_EP_HUMIDITY_PCT, "humidity pct" }, \
+    { AI_EP_PRESSURE_KPA, "pressure kPa" }, \
 }
 
 // ---- Power / commissioning constants ----

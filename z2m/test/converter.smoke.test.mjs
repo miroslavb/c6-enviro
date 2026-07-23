@@ -58,9 +58,23 @@ test("analog telemetry decoder maps endpoints to channels", async () => {
     fz.convert(null, {endpoint: {ID: 5}, cluster: "genAnalogInput", type: "attributeReport", data: {presentValue: 28801}}),
     {wake_count: 28801},
   );
+  // v0.1.2 mirrors: EP6/7/8 publish into the canonical T/RH/P properties
+  assert.deepEqual(
+    fz.convert(null, {endpoint: {ID: 6}, cluster: "genAnalogInput", type: "attributeReport", data: {presentValue: 25.316}}),
+    {temperature: 25.32},
+  );
+  assert.deepEqual(
+    fz.convert(null, {endpoint: {ID: 7}, cluster: "genAnalogInput", type: "attributeReport", data: {presentValue: 40.257}}),
+    {humidity: 40.26},
+  );
+  assert.deepEqual(
+    fz.convert(null, {endpoint: {ID: 8}, cluster: "genAnalogInput", type: "attributeReport", data: {presentValue: 99.123}}),
+    {pressure: 99.12},
+  );
+
   // Unknown endpoint -> undefined (no crash)
   assert.equal(
-    fz.convert(null, {endpoint: {ID: 9}, cluster: "genAnalogInput", type: "attributeReport", data: {presentValue: 1}}),
+    fz.convert(null, {endpoint: {ID: 12}, cluster: "genAnalogInput", type: "attributeReport", data: {presentValue: 1}}),
     undefined,
   );
   // Missing presentValue -> undefined

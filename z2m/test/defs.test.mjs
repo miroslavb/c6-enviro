@@ -32,7 +32,7 @@ test("attribute split: up diagnostics vs down config", () => {
   const up = upAttributes().map((a) => a.name);
   const down = downAttributes().map((a) => a.name);
   assert.deepEqual(down, ["reportIntervalS", "gasEnabled"]);
-  for (const want of ["statusFlags", "wakeCount", "vbatMv", "awakeMs", "gasResistance"]) {
+  for (const want of ["statusFlags", "wakeCount", "vbatMv", "awakeMs", "gasResistance", "tempC", "humidityPct", "pressureKpa"]) {
     assert.ok(up.includes(want), `up attr '${want}' missing`);
   }
 });
@@ -84,7 +84,7 @@ test("status flags descriptor fans out the contract bits", () => {
 
 test("analog channels: EP2..EP5, wake_count integer, gas float", () => {
   const ch = buildAnalogChannels();
-  assert.deepEqual(ch.map((c) => c.ep), [2, 3, 4, 5]);
+  assert.deepEqual(ch.map((c) => c.ep), [2, 3, 4, 5, 6, 7, 8]);
   const gas = ch.find((c) => c.attr === "gasResistance");
   assert.equal(gas.name, "gas_resistance");
   assert.equal(gas.integer, false);  // SINGLE

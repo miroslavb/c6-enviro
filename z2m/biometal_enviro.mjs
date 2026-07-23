@@ -92,8 +92,17 @@ const identity = buildDeviceIdentity();
 function buildAnalogTelemetryExtend(channels, flags) {
   const byEp = Object.fromEntries(channels.map((c) => [c.ep, c]));
 
+  // v0.1.2 MIRROR channels: T/RH/P also ride the AI path (EP6-8) because the
+  // standard measurement-cluster reports never made it off this hardware+lib
+  // while every AI presentValue did (live 2026-07-23). They publish into the
+  // SAME canonical properties the modernExtend entities read, so HA gets one
+  // temperature/humidity/pressure entity fed by whichever path delivers.
+  // No extra exposes — temperature()/humidity()/pressure() already expose them.
+  const MIRRORS = {tempC: "temperature", humidityPct: "humidity", pressureKpa: "pressure"};
+
   const exposesList = [];
   for (const c of channels) {
+    if (MIRRORS[c.attr]) continue; // mirrored into an existing expose
     if (c.attr === flags.attribute) {
       exposesList.push(
         e
@@ -139,6 +148,10 @@ function buildAnalogTelemetryExtend(channels, flags) {
             payload[b.name] = (value & (1 << b.bit)) !== 0 ? "ON" : "OFF";
           }
           return payload;
+        }
+        if (MIRRORS[c.attr]) {
+          // Device sends human units (°C / % / kPa); round to 2 decimals.
+          return {[MIRRORS[c.attr]]: Math.round(v * 100) / 100};
         }
         return {[c.name]: c.integer ? Math.round(v) : v};
       },
