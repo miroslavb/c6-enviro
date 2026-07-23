@@ -576,7 +576,13 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             s_joined = true;
             led_show_status(LED_STATUS_JOINED);
             setup_self_reporting();
-            emit(s_factory_new_boot ? ZB_EVT_FIRST_JOIN : ZB_EVT_JOINED);
+            // v0.1.3: a STEERING success is ALWAYS a fresh association (we only
+            // steer when off-network) and Z2M will (re)interview after it — so
+            // ALWAYS hold the stay-awake window, not just on factory-new boots.
+            // Field lesson 2026-07-23: after a force-remove + rejoin the old
+            // logic emitted plain JOINED, the device napped through the
+            // re-interview, and Z2M logged "Interview failed" twice.
+            emit(ZB_EVT_FIRST_JOIN);
         } else if (!s_joined) {
             ESP_LOGW(TAG, "steering failed (%s), retry in %d ms",
                      esp_err_to_name(err_status), STEER_RETRY_MS);
