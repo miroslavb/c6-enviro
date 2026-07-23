@@ -149,3 +149,21 @@ Below: the ones that shaped this firmware, plus everything new.
     releasing the first measurement. Timer wakes skip the delay. This
     remains a candidate until live Z2M records `interviewCompleted:true` with
     `[1,2,3,4,5]` and the current `swBuildId`.
+33. **Coordinator-side `Device joined` is not device-side BDB success.** After the
+    v0.1.8 full-flash erase, serial never emitted `JOINED`; every steering result was
+    `ESP_FAIL` followed by `LEAVE`, while Z2M assigned changing NWK addresses and
+    launched interviews against transient associations. Therefore the v0.1.8 quiet
+    phase and 200 ms polling were never reached and cannot be called hardware-proven.
+34. **`force=true` removal deletes only the Z2M database row.** Zigbee2MQTT 2.12.1
+    calls `removeFromDatabase()` and leaves coordinator trust-center/key state intact;
+    normal removal sends `mgmtLeaveReq` but timed out for this device. The coordinator
+    backup still contained the old EUI/link key after the board lost `zb_storage`.
+    v0.1.9 therefore uses unique local-admin EUI `0x8efd49fffe1a3d8c` as the safe,
+    device-scoped diagnostic instead of coordinator-wide NVRAM surgery.
+35. **Do not erase whole flash for routine firmware updates.** Preserve `zb_storage`.
+    A recovery erase is an explicit factory-new event and requires re-pairing.
+36. **Known liveness bug:** a short BOOT press makes `s_awake_until_us` nonzero, while
+    the no-network battery guard currently checks `s_awake_until_us == 0`; after the
+    window expires the value is not cleared, so an unjoined device can scan forever.
+    Keep this separate from the v0.1.9 EUI experiment; RESET without BOOT restores the
+    60 s join/sleep guard.

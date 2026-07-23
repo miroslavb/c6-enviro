@@ -38,6 +38,22 @@ test("solar ZED never switches to always-on RX", () => {
   assert.ok(sleepy < start, "sleepy capability must be selected before stack startup");
 });
 
+test("v0.1.9 uses a unique local-admin EUI before stack startup", () => {
+  assert.match(zbSource,
+    /DEVICE_IEEE_ADDR\s*=\s*\{\s*0x8c\s*,\s*0x3d\s*,\s*0x1a\s*,\s*0xfe\s*,\s*0xff\s*,\s*0x49\s*,\s*0xfd\s*,\s*0x8e\s*,?\s*\}/i,
+    "expected little-endian EUI for 0x8efd49fffe1a3d8c is missing");
+
+  const task = functionBody(zbSource, "static void zb_task(void *arg)", "esp_err_t zb_device_start(");
+  const init = task.indexOf("esp_zb_init(&zb_cfg);");
+  const setAddress = task.indexOf("esp_zb_set_long_address(DEVICE_IEEE_ADDR)");
+  const start = task.indexOf("esp_zb_start(false)");
+  assert.notEqual(init, -1, "Zigbee core init not found");
+  assert.notEqual(setAddress, -1, "custom EUI is not applied");
+  assert.notEqual(start, -1, "Zigbee stack start not found");
+  assert.ok(init < setAddress && setAddress < start,
+    "custom EUI must be applied after core init and before stack startup");
+});
+
 test("fresh and restored commissioning defer self-reporting behind a 60 s quiet window", () => {
   assert.match(zbSource, /#define\s+INTERVIEW_QUIET_MS\s+60000u?/,
     "commissioning needs a bounded quiet period for herdsman ZDO interview");

@@ -60,6 +60,14 @@ static const char *TAG = "zb_device";
 #define INTERVIEW_QUIET_MS           60000u
 #define INTERVIEW_POLL_MS            200u
 
+// v0.1.9 recovery identity. The browser flash erased the device's Zigbee NVRAM,
+// but the coordinator retained the old EUI's trust-center link key. Use a unique
+// locally administered EUI so a factory-new security handshake starts cleanly.
+// esp_zb_ieee_addr_t is little-endian: displayed EUI = 0x8efd49fffe1a3d8c.
+static const esp_zb_ieee_addr_t DEVICE_IEEE_ADDR = {
+    0x8c, 0x3d, 0x1a, 0xfe, 0xff, 0x49, 0xfd, 0x8e,
+};
+
 static zb_event_cb_t s_event_cb = NULL;
 static bool s_joined = false;
 static bool s_factory_new_boot = false;
@@ -665,6 +673,8 @@ static void zb_task(void *arg)
         },
     };
     esp_zb_init(&zb_cfg);
+    ESP_ERROR_CHECK(esp_zb_set_long_address(DEVICE_IEEE_ADDR));
+    ESP_LOGI(TAG, "Zigbee EUI-64 override: 0x8efd49fffe1a3d8c");
     // Sleepy end device: the radio is OFF between parent polls, and the parent
     // buffers our downlink traffic. This (not the Basic powerSource byte) is
     // what makes Z2M classify the device as battery/EndDevice.

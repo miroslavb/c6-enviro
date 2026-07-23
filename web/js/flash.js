@@ -8,7 +8,8 @@
 //   * esptool-js 0.5.7 (vendored), pako bundled — NOT 0.6.x (no uncompressed fallback).
 //   * default baud 115200 with romBaudrate === baudrate, so esptool-js skips the
 //     mid-session baud change that corrupts writes over virtual (USB-CDC) baud.
-//   * erase-whole-flash default ON + a standalone "Recover (erase only)" path.
+//   * erase-whole-flash default OFF so routine updates preserve Zigbee NVRAM;
+//     a standalone, confirmed "Recover (erase only)" path remains available.
 //   * writeFlash data passed as chunked binary STRINGS (esptool-js 0.5.x contract).
 //   * compression ON (the proven esp-web-tools path).
 //   * hardReset() wrapped in try/catch — native USB reset is flaky; tell the user to replug.
@@ -114,9 +115,10 @@ async function doFlash() {
       log(`  ${part.path} @ 0x${part.offset.toString(16)} (${data.byteLength} B)`);
     }
 
-    // Write. Erase-whole-flash first (default ON) clears any half-written/garbage
-    // flash from a previous failed attempt and makes writes far more reliable.
-    const eraseAll = $('eraseFirst')?.checked !== false;
+    // Routine updates must preserve zb_storage (network keys / pairing). Missing
+    // checkbox state fails safe to false; destructive erase requires an explicit
+    // user opt-in or the separately confirmed recovery action below.
+    const eraseAll = $('eraseFirst')?.checked === true;
     const compress = $('compress')?.checked !== false; // default ON — proven esp-web-tools path
     setStatus(eraseAll ? 'Flashing (erasing first)… do not unplug.' : 'Flashing… do not unplug.');
     log(`baud=${selectedBaud()} eraseAll=${eraseAll} compress=${compress}`);
@@ -149,8 +151,8 @@ async function doFlash() {
     setStatus('❌ ' + (err.message || err));
     log('ERROR: ' + (err.message || err));
     log('Recovery: unplug, HOLD the BOOT button (GPIO9), plug in while holding, release after ~2s,');
-    log('then keep the speed at 115200 with "Erase whole flash first" checked and try again.');
-    log('If a previous write left the device wedged, use "Recover device (erase flash only)" first.');
+    log('then retry at 115200 with erase-first OFF so Zigbee pairing is preserved.');
+    log('Only if the flash is genuinely wedged, use the separately confirmed "Recover device (erase flash only)" action.');
   } finally {
     try { await transport?.disconnect(); } catch {}
     busy = false;

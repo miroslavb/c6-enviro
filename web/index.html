@@ -73,12 +73,12 @@
           <option value="460800">460800 (external UART adapter only)</option>
           <option value="921600">921600 — fastest (external UART adapter only)</option>
         </select>
-        <label class="check"><input type="checkbox" id="eraseFirst" checked /> Erase whole flash first (recommended)</label>
+        <label class="check"><input type="checkbox" id="eraseFirst" /> Erase whole flash first (recovery only — erases Zigbee pairing)</label>
         <label class="check"><input type="checkbox" id="compress" checked /> Compress flash data (leave on)</label>
         <p class="hint small">
           The C6 uses native USB-Serial/JTAG, where baud is virtual — leave the speed at 115200
-          unless you are flashing through an external UART adapter. Erase-first clears any
-          half-written flash from a previous failed attempt and makes writes far more reliable.
+          unless you are flashing through an external UART adapter. Routine updates preserve
+          Zigbee <code>zb_storage</code>; enable erase-first only for explicit factory-new recovery.
         </p>
       </details>
     </section>
@@ -95,7 +95,7 @@
         <li><b>Hold the BOOT button</b> (GPIO9).</li>
         <li>Plug it back in <b>while still holding BOOT</b>.</li>
         <li>Release BOOT after about 2 seconds.</li>
-        <li>Press <b>Connect &amp; Flash</b> again, keeping the speed at 115200 and erase-first checked.</li>
+        <li>Press <b>Connect &amp; Flash</b> again at 115200 with erase-first <b>off</b>.</li>
       </ol>
       <p class="hint">
         Note: once the enviro firmware is running, the device <b>deep-sleeps between cycles</b>
@@ -159,6 +159,6 @@
     <span><a href="https://github.com/miroslavb/c6-enviro" target="_blank" rel="noopener">source on GitHub</a></span>
   </footer>
 
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app.js?v=0.1.9"></script>
 </body>
 </html>
