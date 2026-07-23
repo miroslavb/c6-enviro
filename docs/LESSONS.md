@@ -167,3 +167,10 @@ Below: the ones that shaped this firmware, plus everything new.
     window expires the value is not cleared, so an unjoined device can scan forever.
     Keep this separate from the v0.1.9 EUI experiment; RESET without BOOT restores the
     60 s join/sleep guard.
+37. **Fast polling that begins after `STEERING=OK` cannot help the security handshake.**
+    v0.1.9 created a clean new-EUI Z2M record with a stable NWK address, proving that
+    stale identity/address churn was removed, but serial still stayed factory-new and
+    never emitted device-side `JOINED`; Z2M then failed even the node descriptor.
+    v0.1.10 therefore starts the same bounded 200 ms sleepy polling immediately before
+    `ESP_ZB_BDB_MODE_NETWORK_STEERING`, so the parent's buffered trust-center transport
+    key can be delivered. It does not enable `rx_on_when_idle`.

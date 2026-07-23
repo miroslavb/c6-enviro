@@ -44,7 +44,7 @@ Restart Z2M.
 1. Z2M → **Permit join (all)**.
 2. Power or reset the board. Factory-new firmware steers immediately; the LED goes
    blue (steering) → green (joined).
-   For v0.1.9 the expected IEEE is **`0x8efd49fffe1a3d8c`**.
+   For v0.1.10 the expected IEEE is **`0x8efd49fffe1a3d8c`**.
 3. **Leave it alone for the next few minutes**: after the first join the device stays
    awake **5 minutes** but remains a sleepy end device. The first **60 seconds are
    intentionally quiet** (no telemetry/reporting) while the sleepy device polls its
@@ -64,11 +64,12 @@ endpoints; v0.1.6/v0.1.7 then tested continuous RX, but v0.1.7 still failed live
 despite strong uplink telemetry. v0.1.8 also exposed a separate factory-new security
 failure after a full-flash erase: Z2M saw transient joins, but device-side BDB never
 reached `STEERING=ESP_OK` because the coordinator retained the old EUI/link-key state.
-Flash **v0.1.9 or newer**, pair IEEE `0x8efd49fffe1a3d8c`, keep Permit join open until
-the serial console prints `JOINED`, and then let the interview continue. v0.1.9
+Flash **v0.1.10 or newer**, pair IEEE `0x8efd49fffe1a3d8c`, keep Permit join open until
+the serial console prints `JOINED`, and then let the interview continue. v0.1.10
 exposes `[1,2,3,4,5]`, keeps `rx_on_when_idle=false`, and
-reserves the first 60 seconds after fresh steering or a firmware-update cold boot
-for 200 ms parent polls and interview responses before enabling its own bind/report
+starts 200 ms parent polling before factory-new BDB steering so the trust-center key
+can reach the sleepy child. It keeps that interval for the first 60 seconds after
+fresh steering or a firmware-update cold boot for interview responses before enabling bind/report
 traffic and restoring 1000 ms polling. Do not enable **Erase whole flash first**
 merely to reopen interview mode. Do not repeatedly force-remove/rejoin a
 half-interviewed entry: that creates overlapping interview attempts and
@@ -100,11 +101,12 @@ into your `packages/` and adjust entity ids to your friendly name.
 - **Web console**: https://c6.miroslav.diy/flash/enviro/console/ — auto-reconnects
   across deep-sleep cycles, so you see every wake's log without touching anything.
 - A healthy cycle logs:
-  `C6-ENVIRO v0.1.9 starting (wake #N, deep-sleep wake)` →
+  `C6-ENVIRO v0.1.10 starting (wake #N, deep-sleep wake)` →
   `vbat: …` → `BME680@0x76: T=…` → `network restored from NVRAM` →
   `deep sleep 2… ms`.
 - `factory-new → network steering` in every cycle = the join never succeeded:
   check permit-join / channel / coordinator range.
-- v0.1.9 additionally logs `Zigbee EUI-64 override: 0x8efd49fffe1a3d8c`
+- v0.1.10 additionally logs `Zigbee EUI-64 override: 0x8efd49fffe1a3d8c`
+  and `steering: parent poll every 200 ms`
   before stack startup. Acceptance requires that same IEEE in Z2M.
 - Re-pair from scratch: hold **BOOT ≥3 s** (factory reset) with permit-join open.

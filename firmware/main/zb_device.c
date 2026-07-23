@@ -547,6 +547,11 @@ static void bdb_commissioning_cb(uint8_t mode_mask)
 static void start_steering(void)
 {
     if (s_joined) return;
+    // A factory-new sleepy child must poll while the trust center completes the
+    // security handshake. Starting fast polls only after STEERING=OK is too late:
+    // the buffered transport key can otherwise expire and BDB reports ESP_FAIL.
+    ezb_nwk_set_keepalive_interval(INTERVIEW_POLL_MS);
+    ESP_LOGI(TAG, "steering: parent poll every %u ms", (unsigned)INTERVIEW_POLL_MS);
     esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
     led_show_status(LED_STATUS_JOINING);
 }

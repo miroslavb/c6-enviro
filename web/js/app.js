@@ -4,7 +4,7 @@
 // "Connect & Flash" and "Recover (erase only)" buttons to flash.js. There is no
 // keyboard view, no WiFi form, no relay, no cfg-blob — the device talks to Home
 // Assistant over Zigbee, so nothing needs to be baked in at flash time.
-import { initFlash } from './flash.js?v=0.1.9';
+import { initFlash } from './flash.js?v=0.1.10';
 
 const $ = (id) => document.getElementById(id);
 

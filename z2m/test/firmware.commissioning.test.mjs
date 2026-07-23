@@ -38,7 +38,7 @@ test("solar ZED never switches to always-on RX", () => {
   assert.ok(sleepy < start, "sleepy capability must be selected before stack startup");
 });
 
-test("v0.1.9 uses a unique local-admin EUI before stack startup", () => {
+test("recovery firmware uses a unique local-admin EUI before stack startup", () => {
   assert.match(zbSource,
     /DEVICE_IEEE_ADDR\s*=\s*\{\s*0x8c\s*,\s*0x3d\s*,\s*0x1a\s*,\s*0xfe\s*,\s*0xff\s*,\s*0x49\s*,\s*0xfd\s*,\s*0x8e\s*,?\s*\}/i,
     "expected little-endian EUI for 0x8efd49fffe1a3d8c is missing");
@@ -52,6 +52,21 @@ test("v0.1.9 uses a unique local-admin EUI before stack startup", () => {
   assert.notEqual(start, -1, "Zigbee stack start not found");
   assert.ok(init < setAddress && setAddress < start,
     "custom EUI must be applied after core init and before stack startup");
+});
+
+test("factory-new steering fast-polls before the BDB security handshake", () => {
+  const steering = functionBody(
+    zbSource,
+    "static void start_steering(void)",
+    "static void steering_retry_cb(uint8_t param)",
+  );
+  const fastPoll = steering.indexOf("ezb_nwk_set_keepalive_interval(INTERVIEW_POLL_MS);");
+  const bdb = steering.indexOf("esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);");
+  assert.notEqual(fastPoll, -1,
+    "sleepy child does not fast-poll while waiting for the trust-center transport key");
+  assert.notEqual(bdb, -1, "BDB network steering call not found");
+  assert.ok(fastPoll < bdb,
+    "fast parent polling must begin before the BDB security handshake starts");
 });
 
 test("fresh and restored commissioning defer self-reporting behind a 60 s quiet window", () => {
