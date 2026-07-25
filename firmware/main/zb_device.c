@@ -21,8 +21,8 @@
 // New for the sleepy end device:
 //   * role = ESP_ZB_DEVICE_TYPE_ED with rx_on_when_idle = false by default;
 //     only a 5-minute cold-boot/BOOT interview window enables continuous RX.
-//     Normal keep_alive is 1 s (temporarily 200 ms during the quiet phase),
-//     ed_timeout 64 min.
+//     Normal reporting uses a 1 s keep_alive after a bounded 1 s / 200 ms
+//     parent-poll control receive slot; ed_timeout 64 min.
 //   * After deep sleep the stack restores the network from zb_storage NVRAM —
 //     the DEVICE_REBOOT signal arrives with the network up, no steering.
 //   * The wake cycle is sequenced by events back to main.c, which owns the
@@ -54,13 +54,14 @@ static const char *TAG = "zb_device";
 #define HA_ENDPOINT                  1
 #define ESP_ZB_PRIMARY_CHANNEL_MASK  ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK
 #define INSTALLCODE_POLICY_ENABLE    false
-// Keep-alive (parent poll period) while awake, ms. 1 s: every 3 s wake cycle
-// polls the parent at least twice, so queued HA writes (report_interval_s,
-// gas_enabled) reach the device promptly.
+// Keep-alive (parent poll period) while ordinary reporting is active, ms. A
+// normal deep-sleep wake first uses INTERVIEW_POLL_MS for one bounded receive
+// slot so indirect HA writes are fetched before its outbound reports/flush.
 #define ED_KEEP_ALIVE_MS             1000
 #define STEER_RETRY_MS               5000
 #define INTERVIEW_QUIET_MS           60000u
 #define INTERVIEW_POLL_MS            200u
+#define NORMAL_CONTROL_POLL_WINDOW_MS 1000u
 
 // v0.1.9 recovery identity. The browser flash erased the device's Zigbee NVRAM,
 // but the coordinator retained the old EUI's trust-center link key. Use a unique
@@ -376,8 +377,8 @@ static void setup_self_reporting(void)
 static void setup_self_reporting_cb(uint8_t param)
 {
     (void)param;
-    // The interview phase is over. Restore the normal low-duty parent-poll
-    // interval before device-side bind/report traffic begins.
+    // The bounded receive phase is over. Restore the normal low-duty
+    // parent-poll interval before device-side bind/report traffic begins.
     ezb_nwk_set_keepalive_interval(ED_KEEP_ALIVE_MS);
     setup_self_reporting();
     emit(ZB_EVT_REPORTING_READY);
@@ -385,7 +386,7 @@ static void setup_self_reporting_cb(uint8_t param)
 
 static void schedule_self_reporting(bool quiet)
 {
-    const uint32_t delay_ms = quiet ? INTERVIEW_QUIET_MS : 1u;
+    const uint32_t delay_ms = quiet ? INTERVIEW_QUIET_MS : NORMAL_CONTROL_POLL_WINDOW_MS;
     // At most one delayed setup may survive. A quick leave/rejoin must start a
     // fresh quiet phase instead of inheriting the old join's nearly-expired alarm.
     esp_zb_scheduler_alarm_cancel(setup_self_reporting_cb, 0);
@@ -398,8 +399,14 @@ static void schedule_self_reporting(bool quiet)
                  "commissioning: %u ms quiet ZDO phase, parent poll every %u ms",
                  (unsigned)delay_ms, (unsigned)INTERVIEW_POLL_MS);
     } else {
-        ezb_nwk_set_keepalive_interval(ED_KEEP_ALIVE_MS);
-        ESP_LOGI(TAG, "normal wake: enabling reporting");
+        // A command can arrive immediately after the previous wake's final poll.
+        // Poll the parent several times *before* our telemetry burst, otherwise
+        // the flush completion races main's deep-sleep transition and no ZCL
+        // read/write response can be emitted on a normal timer wake.
+        ezb_nwk_set_keepalive_interval(INTERVIEW_POLL_MS);
+        ESP_LOGI(TAG,
+                 "normal wake: %u ms control receive phase, parent poll every %u ms",
+                 (unsigned)delay_ms, (unsigned)INTERVIEW_POLL_MS);
     }
     esp_zb_scheduler_alarm(setup_self_reporting_cb, 0, delay_ms);
 }

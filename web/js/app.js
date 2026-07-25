@@ -3,7 +3,7 @@
 // Detect Web-Serial support, wire flashing/recovery, and render a safe
 // Zigbee2MQTT settings payload. The page never writes configuration to NVS:
 // routine browser flashes preserve the existing device pairing and settings.
-import { initFlash } from './flash.js?v=0.1.12';
+import { initFlash } from './flash.js?v=0.1.13';
 
 const $ = (id) => document.getElementById(id);
 

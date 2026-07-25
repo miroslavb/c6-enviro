@@ -130,6 +130,25 @@ test("bounded fast parent polling serves the quiet interview phase", () => {
     "quiet phase does not accelerate sleepy parent polling");
 });
 
+test("normal timer wakes reserve a bounded fast-poll slot for queued controls", () => {
+  assert.match(zbSource, /#define\s+NORMAL_CONTROL_POLL_WINDOW_MS\s+1000u?/,
+    "normal deep-sleep wakes need a one-second control receive budget");
+
+  const schedule = functionBody(
+    zbSource,
+    "static void schedule_self_reporting(bool quiet)",
+    "// ===========================================================================\n// Measurement push",
+  );
+  assert.match(schedule,
+    /const\s+uint32_t\s+delay_ms\s*=\s*quiet\s*\?\s*INTERVIEW_QUIET_MS\s*:\s*NORMAL_CONTROL_POLL_WINDOW_MS/,
+    "normal wake still starts reporting immediately instead of receiving queued controls first");
+  assert.match(schedule,
+    /else\s*\{[\s\S]*?ezb_nwk_set_keepalive_interval\s*\(\s*INTERVIEW_POLL_MS\s*\)/,
+    "normal control slot does not use fast sleepy-parent polling");
+  assert.doesNotMatch(schedule, /esp_zb_set_rx_on_when_idle\s*\(\s*true\s*\)/,
+    "normal control slot must not turn the solar ZED into an always-on receiver");
+});
+
 test("stale reporting alarms cannot escape across leave/rejoin", () => {
   const schedule = functionBody(
     zbSource,

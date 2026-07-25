@@ -8,9 +8,10 @@
 //      open in Z2M).
 //   3. On a commissioning join/cold boot, reserve a quiet 60 s interval for
 //      Z2M's ZDO interview before enabling bind/report traffic. On normal timer
-//      wakes reporting is enabled immediately. Push the snapshot only after the
-//      reporting-ready event, then deep sleep after the flush window.
-//
+//      wakes, reserve a one-second fast-poll control receive slot before reporting.
+//      Push the snapshot only after the reporting-ready event, then deep sleep
+//      after the flush window.
+
 // Stay-awake rules (a sleepy device that naps mid-interview never finishes
 // pairing — Z2M FAQ):
 //   * first (factory-new) join OR a cold boot with restored network NVRAM →

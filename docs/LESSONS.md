@@ -198,7 +198,14 @@ Below: the ones that shaped this firmware, plus everything new.
     Live 2026-07-26 Enviro continued to announce and report every 10 s with
     `presentValue:10`, but Z2M's default 10 s `genAnalogOutput.write` timed out
     at the poll boundary. This is a host-side wait-budget race, not a dead device
-    or `NOT_AUTHORIZED`. The converter now derives a 30–120 s timeout from the
-    current persisted interval and applies it to both interval writes and gas
-    commands; high-cadence changes can be forced with a bounded RESET/BOOT window.
-    [env]
+    or `NOT_AUTHORIZED`. The converter derives a 30–120 s timeout from the current
+    persisted interval and applies it to both interval writes and gas commands;
+    however, v0.1.13 additionally fixes the firmware receive phase below. [env]
+42. **Outbound telemetry does not prove a normal deep-sleep wake can receive ZCL.**
+    Live 2026-07-25/26 Enviro sent `device_announce` + telemetry every 10 s while
+    standard `read` and `write` requests still timed out after 10 and 30 s across
+    multiple wakes. `schedule_self_reporting(false)` had restored 1000 ms polling
+    and started outbound reporting almost immediately, so main reached deep sleep
+    before a distinct indirect-control receive opportunity. v0.1.13 reserves a
+    1000 ms fast (200 ms) parent-poll slot before telemetry, then restores 1000 ms;
+    it does not enable permanent RX. [env]
