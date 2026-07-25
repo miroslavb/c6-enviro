@@ -1,4 +1,4 @@
-// Regression tests for the v0.1.11 standard-control migration.
+// Regression tests for the v0.1.12 standard-control migration.
 //
 // ESP-Zigbee's compat stack rejects writes to custom-cluster attributes as
 // NOT_AUTHORIZED even when the attribute is registered READ_WRITE. The sleepy

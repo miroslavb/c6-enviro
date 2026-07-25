@@ -179,11 +179,18 @@ Below: the ones that shaped this firmware, plus everything new.
     key can be delivered. It does not enable `rx_on_when_idle`.
 38. **Custom `READ_WRITE` does not imply a writable wire attribute in ESP-Zigbee compat.**
     Live 2026-07-25 Z2M writes to Enviro attrs `0x0010`/`0x0011` returned
-    `NOT_AUTHORIZED`; use only the standard v0.1.11 EP1 control plane. [env]
+    `NOT_AUTHORIZED`; v0.1.12 uses only the standard EP1 control plane. [env]
 39. **LED colour alone is not a power-state diagnosis — but its init gate still matters.**
     A live device can show a transient commissioning colour while Z2M shows
     `interviewCompleted:true`, `first_boot:OFF` and an advancing `wake_count`.
     v0.1.10 also had a C evaluation-order bug: `led_init() == ESP_OK && first_boot`
-    invoked `led_init()` on every timer wake. v0.1.11 fixes it to
+    invoked `led_init()` on every timer wake. v0.1.12 fixes it to
     `first_boot && led_init() == ESP_OK`; check live Z2M evidence before reset.
     [env]
+40. **A five-minute MCU-awake window is not a ZDO reachability window by itself.**
+    Live 2026-07-25 v0.1.11 re-interviews received repeated device announces but
+    still timed out on Active Endpoints after the 60 s 200 ms polling phase. v0.1.12
+    retains the sleepy default and enables `rx_on_when_idle=true` only for the
+    scheduler-bounded `AWAKE_WINDOW_S` cold-boot/BOOT interval, then explicitly
+    restores false before normal reporting. Hardware acceptance still requires
+    `interviewCompleted:true` and `epList:[1,2,3,4,5]`. [env]

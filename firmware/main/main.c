@@ -79,8 +79,10 @@ static void zb_event_handler(zb_event_t evt)
 
 static void on_button_short_press(void)
 {
-    // Extend only the bounded MCU-awake window. The solar sensor remains a
-    // sleepy, parent-polled ZED; BOOT must never switch it to always-on RX.
+    // BOOT is an explicit user request to keep the device reachable for
+    // diagnostics/re-interview. The Zigbee layer enables RX only for this
+    // same bounded window and always returns to sleepy mode afterward.
+    zb_device_enable_interview_rx();
     s_awake_until_us = esp_timer_get_time() + (int64_t)AWAKE_WINDOW_S * 1000000;
     ESP_LOGI(TAG, "BOOT press: staying awake %d s", AWAKE_WINDOW_S);
     led_show_status(LED_STATUS_JOINING);

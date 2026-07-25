@@ -36,6 +36,12 @@ esp_err_t zb_device_start(zb_event_cb_t cb, bool commissioning_boot);
 // task via the Zigbee scheduler).
 void zb_device_push_measurement(void);
 
+// Open a bounded continuous-RX window for a user-requested/firmware-update
+// re-interview. The callback is safe from non-Zigbee tasks; normal deep-sleep
+// wakes remain parent-polled because the window is explicitly closed after
+// AWAKE_WINDOW_S (or sooner by deep sleep).
+void zb_device_enable_interview_rx(void);
+
 // Erase the Zigbee NVRAM and reboot factory-new (BOOT long-press).
 void zb_device_factory_reset(void);
 

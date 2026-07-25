@@ -26,10 +26,10 @@ test("routine flash preserves zb_storage by default", () => {
     "runtime guidance still recommends destructive erase by default");
   assert.doesNotMatch(html, /erase-first\s+(?:checked|on)\b/i,
     "HTML help still recommends destructive erase during routine recovery");
-  assert.match(html, /src=["']js\/app\.js\?v=0\.1\.11["']/,
-    "installer entry module is not cache-busted for v0.1.11");
-  assert.match(app, /from\s+["']\.\/flash\.js\?v=0\.1\.11["']/,
-    "flash safety module is not cache-busted for v0.1.11");
+  assert.match(html, /src=["']js\/app\.js\?v=0\.1\.12["']/,
+    "installer entry module is not cache-busted for v0.1.12");
+  assert.match(app, /from\s+["']\.\/flash\.js\?v=0\.1\.12["']/,
+    "flash safety module is not cache-busted for v0.1.12");
 });
 
 test("explicit recovery erase remains available", () => {

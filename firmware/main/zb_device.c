@@ -19,8 +19,10 @@
 //     defensively (a corrupted partition is erased, not abort()ed on).
 //
 // New for the sleepy end device:
-//   * role = ESP_ZB_DEVICE_TYPE_ED with rx_on_when_idle = false, normal
-//     keep_alive 1 s (temporarily 200 ms during commissioning), ed_timeout 64 min.
+//   * role = ESP_ZB_DEVICE_TYPE_ED with rx_on_when_idle = false by default;
+//     only a 5-minute cold-boot/BOOT interview window enables continuous RX.
+//     Normal keep_alive is 1 s (temporarily 200 ms during the quiet phase),
+//     ed_timeout 64 min.
 //   * After deep sleep the stack restores the network from zb_storage NVRAM —
 //     the DEVICE_REBOOT signal arrives with the network up, no steering.
 //   * The wake cycle is sequenced by events back to main.c, which owns the
@@ -487,6 +489,34 @@ void zb_device_push_measurement(void)
     esp_zb_scheduler_alarm(push_cb, 0, 1);
 }
 
+// A ZED normally keeps its radio off between parent polls. A firmware flash,
+// fresh steering, or explicit BOOT press is the only time Z2M needs immediate
+// ZDO replies; keep RX on for exactly the same 5-minute window main keeps the
+// MCU awake, then restore ordinary sleepy operation.
+static void disable_interview_rx_cb(uint8_t param)
+{
+    (void)param;
+    esp_zb_set_rx_on_when_idle(false);
+    ESP_LOGI(TAG, "interview window elapsed: sleepy Zigbee RX restored");
+}
+
+static void enable_interview_rx_cb(uint8_t param)
+{
+    (void)param;
+    esp_zb_scheduler_alarm_cancel(disable_interview_rx_cb, 0);
+    esp_zb_set_rx_on_when_idle(true);
+    esp_zb_scheduler_alarm(disable_interview_rx_cb, 0,
+                           (uint32_t)AWAKE_WINDOW_S * 1000u);
+    ESP_LOGI(TAG, "interview window: continuous Zigbee RX for %u s",
+             (unsigned)AWAKE_WINDOW_S);
+}
+
+void zb_device_enable_interview_rx(void)
+{
+    // BOOT is delivered outside the Zigbee task; marshal all stack access.
+    esp_zb_scheduler_alarm(enable_interview_rx_cb, 0, 1);
+}
+
 // ===========================================================================
 // SET_ATTR write router (HA config writes)
 // ===========================================================================
@@ -617,6 +647,9 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
                          esp_zb_get_pan_id(), esp_zb_get_current_channel(),
                          esp_zb_get_short_address());
                 s_joined = true;
+                if (s_commissioning_boot) {
+                    zb_device_enable_interview_rx();
+                }
                 schedule_self_reporting(s_commissioning_boot);
                 emit(ZB_EVT_JOINED);
             }
@@ -634,6 +667,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
                      esp_zb_get_pan_id(), esp_zb_get_current_channel(),
                      esp_zb_get_short_address());
             s_joined = true;
+            zb_device_enable_interview_rx();
             led_show_status(LED_STATUS_JOINED);
             // v0.1.0 completed the five-endpoint interview while reporting slots
             // were inactive. Once min_interval=1 made reporting work, starting

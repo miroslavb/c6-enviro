@@ -7,7 +7,7 @@ single Li-ion cell. A **sleepy Zigbee end device** that wakes from deep sleep ev
 BME680 offers plus the battery voltage, reports over **Zigbee2MQTT**, and goes back
 to sleep. Flash it from the browser at **https://c6.miroslav.diy/flash/enviro/**.
 
-Firmware **v0.1.11** uses recovery EUI-64 `0x8efd49fffe1a3d8c`. A full-flash erase
+Firmware **v0.1.12** uses recovery EUI-64 `0x8efd49fffe1a3d8c`. A full-flash erase
 during the v0.1.8 field test destroyed `zb_storage`, while the coordinator retained
 the old EUI's trust-center key. The new local-admin identity isolates this one sensor
 without modifying coordinator NVRAM or any sibling device.
@@ -58,11 +58,11 @@ bash scripts/build-firmware.sh          # → web/firmware/*.bin + manifest.json
 #    Routine update: DO NOT erase whole flash; preserve zb_storage.
 
 # 4. Pair: install z2m/ converter → restart Z2M → Permit join → reset the board.
-#    Expected v0.1.11 IEEE: 0x8efd49fffe1a3d8c.
+#    Expected v0.1.12 IEEE: 0x8efd49fffe1a3d8c.
 #    It stays awake 5 minutes after a fresh join or firmware-update cold boot.
-#    The radio remains sleepy; BDB steering and the first 60 s use short 200 ms
-#    parent polls to receive the trust-center key and interview requests, and
-#    intentionally carry only interview traffic, then normal reporting starts.
+#    v0.1.12 turns continuous RX on only inside that bounded interview window;
+#    the first 60 s also use 200 ms parent polls for ZDO/security traffic, then
+#    RX and polling return to normal sleepy operation before reporting.
 ```
 
 Full setup: [`docs/INTEGRATION.md`](docs/INTEGRATION.md) · design rationale:

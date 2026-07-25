@@ -24,18 +24,32 @@ function functionBody(source, signature, nextSignature) {
   return source.slice(start, end);
 }
 
-test("solar ZED never switches to always-on RX", () => {
-  assert.doesNotMatch(zbSource, /esp_zb_set_rx_on_when_idle\s*\(\s*true\s*\)/,
-    "always-on RX violates the battery/solar sleepy-end-device contract");
-  assert.doesNotMatch(zbSource + zbHeader + mainSource, /zb_device_enable_interview_rx/,
-    "obsolete always-on interview helper is still referenced");
-
+test("solar ZED is sleepy by default and opens RX only for a bounded interview window", () => {
   const task = functionBody(zbSource, "static void zb_task(void *arg)", "esp_err_t zb_device_start(");
   const sleepy = task.indexOf("esp_zb_set_rx_on_when_idle(false);");
   const start = task.indexOf("esp_zb_start(false)");
   assert.notEqual(sleepy, -1, "ZED startup does not explicitly select sleepy RX");
   assert.notEqual(start, -1, "Zigbee stack start not found");
   assert.ok(sleepy < start, "sleepy capability must be selected before stack startup");
+
+  assert.match(zbHeader, /void\s+zb_device_enable_interview_rx\s*\(\s*void\s*\)/,
+    "main has no bounded interview-window hook");
+  const enable = functionBody(
+    zbSource,
+    "static void enable_interview_rx_cb(uint8_t param)",
+    "void zb_device_enable_interview_rx(void)",
+  );
+  assert.match(enable, /esp_zb_set_rx_on_when_idle\s*\(\s*true\s*\)/,
+    "the temporary interview window never enables RX");
+  assert.match(enable, /esp_zb_scheduler_alarm\s*\(\s*disable_interview_rx_cb\s*,\s*0\s*,\s*\(uint32_t\)AWAKE_WINDOW_S\s*\*\s*1000u\s*\)/,
+    "continuous RX is not bounded to AWAKE_WINDOW_S");
+  const disable = functionBody(
+    zbSource,
+    "static void disable_interview_rx_cb(uint8_t param)",
+    "static void enable_interview_rx_cb(uint8_t param)",
+  );
+  assert.match(disable, /esp_zb_set_rx_on_when_idle\s*\(\s*false\s*\)/,
+    "the bounded interview window never restores sleepy RX");
 });
 
 test("recovery firmware uses a unique local-admin EUI before stack startup", () => {
@@ -86,6 +100,10 @@ test("fresh and restored commissioning defer self-reporting behind a 60 s quiet 
     "join handler starts bind/report traffic synchronously during interview");
   assert.match(zbSource, /emit\s*\(\s*ZB_EVT_REPORTING_READY\s*\)/,
     "delayed reporting setup does not signal readiness to main");
+  assert.match(signals, /if\s*\(\s*s_commissioning_boot\s*\)\s*\{\s*zb_device_enable_interview_rx\s*\(\s*\)/,
+    "a cold boot with restored NVRAM does not open a bounded RX interview window");
+  assert.match(signals, /case ESP_ZB_BDB_SIGNAL_STEERING:[\s\S]*?zb_device_enable_interview_rx\s*\(\s*\)/,
+    "a fresh steering join does not open a bounded RX interview window");
 });
 
 test("bounded fast parent polling serves the quiet interview phase", () => {
@@ -159,14 +177,14 @@ test("main passes cold-boot context and waits for reporting readiness before fir
   assert.ok(readyWait < firstPush, "measurement is pushed before reporting setup is ready");
 });
 
-test("BOOT extends the awake window without changing the sleepy radio capability", () => {
+test("BOOT extends the bounded MCU and RX interview windows", () => {
   const button = functionBody(
     mainSource,
     "static void on_button_short_press(void)",
     "static void do_measure(bool first_boot)",
   );
-  assert.doesNotMatch(button, /zb_device_enable_interview_rx\s*\(/,
-    "BOOT must not turn a solar sleepy end device into an always-on receiver");
+  assert.match(button, /zb_device_enable_interview_rx\s*\(\s*\)/,
+    "BOOT must reopen the bounded RX window for a manual Z2M re-interview");
   assert.match(button, /s_awake_until_us\s*=/,
     "BOOT no longer extends the bounded commissioning window");
 });

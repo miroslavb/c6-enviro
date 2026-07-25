@@ -1,6 +1,6 @@
 {
   "name": "C6-ENVIRO",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "chipFamily": "ESP32-C6",
   "parts": [
     {

@@ -46,14 +46,15 @@ Restart Z2M.
 1. Z2M → **Permit join (all)**.
 2. Power or reset the board. Factory-new firmware steers immediately; the LED goes
    blue (steering) → green (joined).
-   For v0.1.11 the expected IEEE is **`0x8efd49fffe1a3d8c`**.
+   For v0.1.12 the expected IEEE is **`0x8efd49fffe1a3d8c`**.
 3. **Leave it alone for the next few minutes**: after the first join the device stays
-   awake **5 minutes** but remains a sleepy end device. The first **60 seconds are
-   intentionally quiet** (no telemetry/reporting) while the sleepy device polls its
-   parent every 200 ms so Z2M can finish ZDO discovery. Normal 1 s polling returns
-   automatically before telemetry starts.
-   If the interview stalls, press **BOOT** briefly to extend the bounded MCU-awake
-   window and hit "Reconfigure" in Z2M.
+   awake **5 minutes** and v0.1.12 temporarily enables continuous RX only for that
+   bounded window. The first **60 seconds are intentionally quiet** (no
+   telemetry/reporting) while it also polls its parent every 200 ms so Z2M can finish
+   ZDO discovery. RX is explicitly switched off and normal 1 s polling returns before
+   reporting starts; timer deep-sleep wakes remain sleepy.
+   If the interview stalls, press **BOOT** briefly to reopen the same bounded window
+   and hit "Reconfigure" in Z2M.
 4. Result: device `C6-ENVIRO` / `Biometal`, type **EndDevice**, entities for
    temperature, humidity, pressure, gas_resistance, battery, voltage, vbat_mv,
    status bits, wake_count + config `report_interval_s`, `gas_enabled`.
@@ -66,22 +67,23 @@ endpoints; v0.1.6/v0.1.7 then tested continuous RX, but v0.1.7 still failed live
 despite strong uplink telemetry. v0.1.8 also exposed a separate factory-new security
 failure after a full-flash erase: Z2M saw transient joins, but device-side BDB never
 reached `STEERING=ESP_OK` because the coordinator retained the old EUI/link-key state.
-Flash **v0.1.11 or newer**, pair IEEE `0x8efd49fffe1a3d8c`, keep Permit join open until
+Flash **v0.1.12 or newer**, pair IEEE `0x8efd49fffe1a3d8c`, keep Permit join open until
 the serial console prints `JOINED`, and then let the interview continue. v0.1.10
-exposes `[1,2,3,4,5]`, keeps `rx_on_when_idle=false`, and
-starts 200 ms parent polling before factory-new BDB steering so the trust-center key
-can reach the sleepy child. It keeps that interval for the first 60 seconds after
-fresh steering or a firmware-update cold boot for interview responses before enabling bind/report
-traffic and restoring 1000 ms polling. Do not enable **Erase whole flash first**
-merely to reopen interview mode. Do not repeatedly force-remove/rejoin a
-half-interviewed entry: that creates overlapping interview attempts and
-network-address churn. Acceptance is the Z2M database showing
-`interviewCompleted:true`, `interviewState:"SUCCESSFUL"`, and `epList:[1,2,3,4,5]`.
+exposes `[1,2,3,4,5]`, keeps `rx_on_when_idle=false` by default, and starts 200 ms
+parent polling before factory-new BDB steering so the trust-center key can reach the
+sleepy child. v0.1.12 additionally keeps RX on only for the 5-minute cold-boot/BOOT
+window because live 2026-07-25 re-interviews still received announces but timed out
+on Active Endpoints after the 60 s sleepy-only phase. It schedules RX back off before
+normal reporting. Do not enable **Erase whole flash first** merely to reopen interview
+mode. Do not repeatedly force-remove/rejoin a half-interviewed entry: that creates
+overlapping interview attempts and network-address churn. Acceptance is the Z2M
+database showing `interviewCompleted:true`, `interviewState:"SUCCESSFUL"`, and
+`epList:[1,2,3,4,5]`.
 
-### v0.1.11 control migration — no custom ZCL writes
+### v0.1.12 standard controls + bounded interview RX
 
 ESP-Zigbee compat rejects writable manufacturer-specific attributes with
-`NOT_AUTHORIZED`, even when the attribute list uses `READ_WRITE`. v0.1.11
+`NOT_AUTHORIZED`, even when the attribute list uses `READ_WRITE`. v0.1.12
 therefore retains the successful five endpoint descriptors but adds two **standard
 clusters on EP1**:
 
@@ -118,16 +120,17 @@ into your `packages/` and adjust entity ids to your friendly name.
 - **Web console**: https://c6.miroslav.diy/flash/enviro/console/ — auto-reconnects
   across deep-sleep cycles, so you see every wake's log without touching anything.
 - A healthy cycle logs:
-  `C6-ENVIRO v0.1.11 starting (wake #N, deep-sleep wake)` →
+  `C6-ENVIRO v0.1.12 starting (wake #N, deep-sleep wake)` →
   `vbat: …` → `BME680@0x76: T=…` → `network restored from NVRAM` →
   `deep sleep 2… ms`.
 - `factory-new → network steering` in every cycle = the join never succeeded:
   check permit-join / channel / coordinator range.
-- v0.1.11 additionally logs `Zigbee EUI-64 override: 0x8efd49fffe1a3d8c`
-  and `steering: parent poll every 200 ms`
-  before stack startup. Acceptance requires that same IEEE in Z2M.
+- v0.1.12 additionally logs `Zigbee EUI-64 override: 0x8efd49fffe1a3d8c`,
+  `steering: parent poll every 200 ms`, and on a cold boot/BOOT press
+  `interview window: continuous Zigbee RX for 300 s`. Acceptance requires that
+  same IEEE in Z2M and the subsequent `interviewCompleted:true` state.
 - A white/red commissioning LED alone is not a failure verdict: confirm Z2M is still
   advancing `wake_count` and that `first_boot`/`status_flags` are healthy first.
-  v0.1.11 also gates WS2812/RMT initialization behind `first_boot`, so timer wakes
+  v0.1.12 also gates WS2812/RMT initialization behind `first_boot`, so timer wakes
   never initialize the RGB driver.
 - Re-pair from scratch: hold **BOOT ≥3 s** (factory reset) with permit-join open.
