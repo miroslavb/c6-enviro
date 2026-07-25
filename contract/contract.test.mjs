@@ -17,6 +17,7 @@ const ROOT = join(HERE, '..');
 const files = [
   'firmware/main/zb_contract.h',
   'z2m/lib/contract.generated.mjs',
+  'z2m/lib/enviro-contract.generated.mjs',
   'docs/CONTRACT.md',
 ];
 

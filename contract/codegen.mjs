@@ -217,6 +217,9 @@ function genDoc() {
 const outputs = [
   [join(ROOT, "firmware/main/zb_contract.h"), genHeader()],
   [join(ROOT, "z2m/lib/contract.generated.mjs"), genJs()],
+  // The deployable external converter lives beside sibling projects, whose
+  // generic filenames collide. Publish an identical, enviro-scoped contract.
+  [join(ROOT, "z2m/lib/enviro-contract.generated.mjs"), genJs()],
   [join(ROOT, "docs/CONTRACT.md"), genDoc()],
 ];
 

@@ -17,13 +17,13 @@ import {
 } from "zigbee-herdsman-converters/lib/modernExtend";
 import * as exposes from "zigbee-herdsman-converters/lib/exposes";
 
-import CONTRACT from "./lib/contract.generated.mjs";
+import CONTRACT from "./lib/enviro-contract.generated.mjs";
 import {
   buildAnalogChannels,
   buildStandardControls,
   buildStatusFlagsDescriptor,
   buildDeviceIdentity,
-} from "./lib/defs.mjs";
+} from "./lib/enviro-defs.mjs";
 
 const e = exposes.presets;
 const ea = exposes.access;

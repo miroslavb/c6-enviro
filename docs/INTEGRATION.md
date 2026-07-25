@@ -17,17 +17,19 @@ Local build instead: `bash scripts/build-firmware.sh` (Docker, ESP-IDF 5.4) and 
 ## 2. Zigbee2MQTT converter (do this BEFORE pairing)
 
 ```bash
-# in your Z2M data dir
-mkdir -p external_converters
+# in your Z2M data dir; lib/ is shared with sibling external converters
+mkdir -p external_converters/lib
 cp z2m/biometal_enviro.mjs external_converters/
-cp -r z2m/lib external_converters/lib
+cp z2m/lib/enviro-contract.generated.mjs \
+   z2m/lib/enviro-defs.mjs \
+   z2m/lib/enviro-defs.factory.mjs \
+   external_converters/lib/
 ```
 
-> **Shared `external_converters/` with sibling projects** (c6-radiometer /
-> c6-lcd-zigbee): the `lib/` filenames collide. Install the lib files with a
-> project prefix instead — `lib/enviro-defs.mjs` + `lib/enviro-contract.generated.mjs` —
-> and patch the three relative imports accordingly (this is how the home
-> installation is deployed; the `c6lcd-*` prefix pattern is the precedent).
+> **Shared `external_converters/` with sibling projects:** the Enviro converter
+> imports only the three `enviro-*` library files above. Do **not** overwrite a
+> generic `lib/contract.generated.mjs` or `lib/defs.mjs`; those may belong to a
+> sibling converter.
 
 `configuration.yaml`:
 

@@ -1,6 +1,6 @@
-// Repository-local generic definitions. The deployable converter uses the
-// enviro-prefixed sibling module so it cannot collide in shared Z2M installs.
-import {CONTRACT, Zcl_DataType} from "./contract.generated.mjs";
+// Deployable C6-ENVIRO definitions. Both imports are namespaced so this module
+// remains correct when Zigbee2MQTT external_converters/lib also hosts siblings.
+import {CONTRACT, Zcl_DataType} from "./enviro-contract.generated.mjs";
 import {createDefinitions} from "./enviro-defs.factory.mjs";
 
 const definitions = createDefinitions(CONTRACT);

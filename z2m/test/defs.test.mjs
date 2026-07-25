@@ -1,6 +1,14 @@
 // Pure unit tests for z2m/lib/defs.mjs — Node stdlib only.
 import test from "node:test";
 import assert from "node:assert/strict";
+import {existsSync, readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
+import {dirname, join} from "node:path";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(HERE, "..", "..");
+const converterSource = readFileSync(join(ROOT, "z2m/biometal_enviro.mjs"), "utf8");
+const enviroDefsSource = readFileSync(join(ROOT, "z2m/lib/enviro-defs.mjs"), "utf8");
 
 import {
   CONTRACT,
@@ -64,4 +72,16 @@ test("device identity block", () => {
   const identity = buildDeviceIdentity();
   assert.deepEqual(identity.zigbeeModel, ["C6-ENVIRO"]);
   assert.equal(identity.vendor, "Biometal");
+});
+
+test("converter owns a collision-safe enviro library namespace", () => {
+  assert.match(converterSource, /\.\/lib\/enviro-contract\.generated\.mjs/,
+    "the shared Z2M deployment must not resolve another project's generic contract file");
+  assert.match(converterSource, /\.\/lib\/enviro-defs\.mjs/,
+    "the shared Z2M deployment must not resolve another project's generic defs file");
+  assert.match(enviroDefsSource, /\.\/enviro-defs\.factory\.mjs/,
+    "the deployable defs wrapper must not import a generic shared factory filename");
+  assert.ok(existsSync(join(ROOT, "z2m/lib/enviro-contract.generated.mjs")));
+  assert.ok(existsSync(join(ROOT, "z2m/lib/enviro-defs.mjs")));
+  assert.ok(existsSync(join(ROOT, "z2m/lib/enviro-defs.factory.mjs")));
 });

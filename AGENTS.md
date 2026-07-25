@@ -1,6 +1,7 @@
 # C6 Enviro engineering rules
 
 - Control-plane invariant (v0.1.11): never put writable settings on a manufacturer-specific custom cluster. `report_interval_s` uses EP1 `genAnalogOutput.presentValue`; `gas_enabled` uses EP1 `genOnOff` commands. Keep both at EP1 so acceptance remains `epList:[1,2,3,4,5]`; Z2M numeric controls can arrive as a scalar or `{value:N}`.
+- Z2M deployment invariant: `biometal_enviro.mjs` imports only `enviro-contract.generated.mjs`, `enviro-defs.mjs`, and `enviro-defs.factory.mjs`. Never overwrite generic `lib/contract.generated.mjs` / `defs.mjs` in the shared external_converters directory.
 - LED colour is a bounded commissioning diagnostic, not a power-state oracle. Before treating it as a failure, check live Z2M `interviewCompleted`, `first_boot`, `status_flags`, and advancing `wake_count`.
 - Timer-wake LED invariant: write `if (first_boot && led_init() == ESP_OK)`, never reverse the operands. C evaluates `&&` left-to-right; the old order initialized RMT/WS2812 on every deep-sleep wake despite the intended gate.
 
