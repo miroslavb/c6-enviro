@@ -170,3 +170,11 @@ test("BOOT extends the awake window without changing the sleepy radio capability
   assert.match(button, /s_awake_until_us\s*=/,
     "BOOT no longer extends the bounded commissioning window");
 });
+
+test("timer deep-sleep wakes never initialize the WS2812 status strip", () => {
+  const app = mainSource.slice(mainSource.indexOf("void app_main(void)"));
+  assert.match(app, /if\s*\(\s*first_boot\s*&&\s*led_init\s*\(\s*\)\s*==\s*ESP_OK\s*\)/,
+    "LED initialization must be gated before the call on a timer wake");
+  assert.doesNotMatch(app, /if\s*\(\s*led_init\s*\(\s*\)\s*==\s*ESP_OK\s*&&\s*first_boot\s*\)/,
+    "C evaluates led_init() before first_boot in the old order, waking the RGB driver every cycle");
+});

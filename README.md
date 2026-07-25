@@ -7,7 +7,7 @@ single Li-ion cell. A **sleepy Zigbee end device** that wakes from deep sleep ev
 BME680 offers plus the battery voltage, reports over **Zigbee2MQTT**, and goes back
 to sleep. Flash it from the browser at **https://c6.miroslav.diy/flash/enviro/**.
 
-Firmware **v0.1.10** uses recovery EUI-64 `0x8efd49fffe1a3d8c`. A full-flash erase
+Firmware **v0.1.11** uses recovery EUI-64 `0x8efd49fffe1a3d8c`. A full-flash erase
 during the v0.1.8 field test destroyed `zb_storage`, while the coordinator retained
 the old EUI's trust-center key. The new local-admin identity isolates this one sensor
 without modifying coordinator NVRAM or any sibling device.
@@ -29,7 +29,7 @@ without modifying coordinator NVRAM or any sibling device.
 - **battery** (%) + **voltage** (100 mV) + precise **vbat_mv** — solar charge curve visible
 - **status bits** — `sensor_error`, `heater_unstable`, `battery_low`, `vbat_invalid`, `gas_disabled`, `first_boot`
 - **wake_count** — increments every cycle: proof of life at the 3 s cadence
-- **config**: `report_interval_s` (3…3600, persisted) + `gas_enabled` (heater on/off)
+- **config**: `report_interval_s` (3…3600, persisted) over standard `genAnalogOutput` + `gas_enabled` over standard `genOnOff`; both live on EP1 without expanding the five-endpoint interview surface
 
 ## Repo layout
 
@@ -58,7 +58,7 @@ bash scripts/build-firmware.sh          # → web/firmware/*.bin + manifest.json
 #    Routine update: DO NOT erase whole flash; preserve zb_storage.
 
 # 4. Pair: install z2m/ converter → restart Z2M → Permit join → reset the board.
-#    Expected v0.1.10 IEEE: 0x8efd49fffe1a3d8c.
+#    Expected v0.1.11 IEEE: 0x8efd49fffe1a3d8c.
 #    It stays awake 5 minutes after a fresh join or firmware-update cold boot.
 #    The radio remains sleepy; BDB steering and the first 60 s use short 200 ms
 #    parent polls to receive the trust-center key and interview requests, and

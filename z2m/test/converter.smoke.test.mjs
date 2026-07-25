@@ -13,7 +13,7 @@ test("converter loads and exposes the enviro entities", async () => {
 
   assert.deepEqual(def.zigbeeModel, ["C6-ENVIRO"]);
   assert.equal(def.vendor, "Biometal");
-  assert.equal(mod.manufacturerCode, 0x131b);
+  assert.equal(mod.CONTRACT.version, 3);
   assert.ok(Array.isArray(def.extend) && def.extend.length > 6, "modernExtend list present");
 
   const names = new Set();

@@ -96,6 +96,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .progress { height: 10px; background: var(--card2); border: 1px solid var(--line); border-radius: 6px; margin-top: 14px; overflow: hidden; }
 .progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--cyan)); transition: width .2s; }
 .log { background: #05080c; border: 1px solid var(--line); border-radius: 8px; padding: 10px; max-height: 240px; overflow: auto; font-size: 12px; color: #9fb0c4; white-space: pre-wrap; }
+#powerSettings { scroll-margin-top: 140px; }
+#z2mPayload { margin: 14px 0 8px; color: var(--cyan); }
 
 .foot { text-align: center; padding: 16px; color: var(--dim); font-size: 12px; }
 .hidden { display: none !important; }

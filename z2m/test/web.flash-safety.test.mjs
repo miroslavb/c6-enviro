@@ -10,6 +10,7 @@ const ROOT = join(HERE, "..", "..");
 const html = readFileSync(join(ROOT, "web/index.html"), "utf8");
 const app = readFileSync(join(ROOT, "web/js/app.js"), "utf8");
 const flash = readFileSync(join(ROOT, "web/js/flash.js"), "utf8");
+const css = readFileSync(join(ROOT, "web/css/style.css"), "utf8");
 
 test("routine flash preserves zb_storage by default", () => {
   const checkbox = html.match(/<input[^>]+id=["']eraseFirst["'][^>]*>/i)?.[0];
@@ -25,14 +26,31 @@ test("routine flash preserves zb_storage by default", () => {
     "runtime guidance still recommends destructive erase by default");
   assert.doesNotMatch(html, /erase-first\s+(?:checked|on)\b/i,
     "HTML help still recommends destructive erase during routine recovery");
-  assert.match(html, /src=["']js\/app\.js\?v=0\.1\.10["']/,
-    "installer entry module is not cache-busted for v0.1.10");
-  assert.match(app, /from\s+["']\.\/flash\.js\?v=0\.1\.10["']/,
-    "flash safety module is not cache-busted for v0.1.10");
+  assert.match(html, /src=["']js\/app\.js\?v=0\.1\.11["']/,
+    "installer entry module is not cache-busted for v0.1.11");
+  assert.match(app, /from\s+["']\.\/flash\.js\?v=0\.1\.11["']/,
+    "flash safety module is not cache-busted for v0.1.11");
 });
 
 test("explicit recovery erase remains available", () => {
   assert.match(html, /id=["']eraseBtn["']/i);
   assert.match(flash, /async function doErase\s*\(/);
   assert.match(flash, /confirm\(['"]Erase the entire flash\?/);
+});
+
+test("installer provides a safe Zigbee2MQTT payload for both power controls", () => {
+  assert.match(html, /id=["']reportIntervalS["']/);
+  assert.match(html, /id=["']gasEnabled["']/);
+  assert.match(html, /id=["']z2mPayload["']/);
+  assert.match(html, /id=["']copyZ2mPayload["']/);
+  assert.match(html, /does not write.*USB/i,
+    "the installer must not imply that changing a page value overwrites NVS during flash");
+  assert.match(app, /function initPowerSettings\s*\(/);
+  assert.match(app, /report_interval_s/);
+  assert.match(app, /gas_enabled/);
+  assert.match(app, /initPowerSettings\s*\(\s*\)/);
+  assert.match(css, /#powerSettings\s*\{[^}]*scroll-margin-top\s*:/,
+    "a direct #powerSettings link must not hide its heading behind the sticky topbar");
+  assert.doesNotMatch(flash, /reportIntervalS|gasEnabled|copyZ2mPayload/,
+    "flashing must remain configuration-free and preserve routine-update NVS state");
 });

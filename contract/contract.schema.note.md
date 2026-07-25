@@ -1,21 +1,27 @@
 # contract.json — informal schema
 
-Not a JSON Schema — a human note (the `$schema` key just points here so readers find it).
+Not a JSON Schema — a human note (the `$schema` key points here so readers find it).
 
-- `device` — Basic-cluster identity: `manufacturerName`, `modelId` (== Z2M zigbeeModel),
-  `vendor`, `description`, `powerSource` (0x03 = battery).
-- `manufacturerCode` — ZCL manufacturer code used for the custom cluster (0x131B Espressif).
-- `customCluster` — `{name, id}`; id in the manufacturer range 0xFC00–0xFFFF.
-- `attributes[]` — custom-cluster attrs: `name` (camelCase, C/JS identifier),
-  `expose` (snake_case HA property), `id`, `type` (BOOLEAN|UINT8|UINT16|UINT32|INT16|ENUM8|SINGLE|CHAR_STR),
-  `dir` (`up` = device→HA readable, `down` = HA→device writable),
-  optional `unit`, `default`, `min`, `max`, `desc`.
-- `analogEndpoints[]` — `{ep, attr, description}`: standard genAnalogInput endpoint per
-  reported channel; `attr` must reference an `attributes[].name`.
-- `standardClusters[]` — documentation of the fixed-semantics EP1 clusters (not codegen'd
-  into firmware — informational for docs/CONTRACT.md).
+- `device` — Basic-cluster identity: `manufacturerName`, `modelId` (== Z2M
+  `zigbeeModel`), `vendor`, `description`, `powerSource` (0x03 = battery).
+- `attributes[]` — domain fields: `name` (camelCase C/JS identifier), `expose`
+  (snake_case HA property), historical `id`, type
+  (`BOOLEAN|UINT8|UINT16|UINT32|INT16|ENUM8|SINGLE|CHAR_STR`), direction
+  (`up` / `down`), optional `unit`, `default`, `min`, `max`, `desc`.
+- `standardControls[]` — standard-ZCL mapping for every writable field:
+  `{attr,name,ep,cluster,clusterId,attribute,attributeId,transport}` plus
+  `onCommand` / `offCommand` for command-based boolean controls. Controls must
+  reference a `down` attribute and live on existing endpoint(s); Enviro keeps
+  both at EP1 to preserve the EP1…EP5 sleepy interview budget.
+- `analogEndpoints[]` — `{ep, attr, description}`: standard `genAnalogInput`
+  endpoint per reported non-standard field; `attr` must reference an attribute.
+- `standardClusters[]` — documentation of fixed-semantics EP1 telemetry clusters.
 - `statusBits[]` — `{name, bit, desc}` for the statusFlags bitmask.
 - `batteryLowMv`, `awakeWindowS` — scalar constants surfaced as C defines.
+
+**Wire rule:** v3 does not register a manufacturer-specific custom cluster.
+ESP-Zigbee compat rejects custom `READ_WRITE` attributes with `NOT_AUTHORIZED`;
+use only the declared standard control mapping.
 
 Change anything → `node contract/codegen.mjs` → commit the three regenerated files.
 `contract/contract.test.mjs` fails CI on drift.

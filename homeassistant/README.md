@@ -14,8 +14,8 @@ device paired, HA discovers the entities automatically (`homeassistant: true` in
 | `sensor.<name>_vbat_mv` | Analog Input EP3 | precise battery mV (solar charge curve) |
 | `sensor.<name>_status_flags` + per-bit binaries | Analog Input EP4 | `sensor_error`, `heater_unstable`, `battery_low`, `vbat_invalid`, `gas_disabled`, `first_boot` |
 | `sensor.<name>_wake_count` | Analog Input EP5 | increments every cycle — proof of life |
-| `number.<name>_report_interval_s` | custom cluster (write) | 3…3600 s, persisted on the device |
-| `switch.<name>_gas_enabled` | custom cluster (write) | gas heater on/off |
+| `number.<name>_report_interval_s` | EP1 `genAnalogOutput` `presentValue` (write) | 3…3600 s, persisted on the device |
+| `switch.<name>_gas_enabled` | EP1 `genOnOff` on/off command | gas heater on/off, persisted on the device |
 
 ## Install (Zigbee2MQTT)
 

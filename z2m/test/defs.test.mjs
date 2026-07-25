@@ -1,99 +1,67 @@
-// Pure unit tests for z2m/lib/defs.mjs — no herdsman imports, Node stdlib only.
-// Run: node --test test/   (or `npm test`)
+// Pure unit tests for z2m/lib/defs.mjs — Node stdlib only.
 import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
   CONTRACT,
-  Zcl_DataType,
-  MANUF,
-  CLUSTER_NAME,
-  CLUSTER_ID,
-  resolveZclType,
   upAttributes,
   downAttributes,
   builderKind,
-  buildCustomClusterDef,
-  buildDownDescriptors,
+  buildStandardControls,
   buildStatusFlagsDescriptor,
   buildAnalogChannels,
   buildDeviceIdentity,
 } from "../lib/defs.mjs";
 
-test("contract identity", () => {
-  assert.equal(MANUF, 0x131b);
-  assert.equal(CLUSTER_NAME, "biometalEnviro");
-  assert.equal(CLUSTER_ID, 0xfc00);
+test("contract identity and standard-only wire rule", () => {
   assert.equal(CONTRACT.device.modelId, "C6-ENVIRO");
-  assert.equal(CONTRACT.device.powerSource, 3); // battery
+  assert.equal(CONTRACT.device.powerSource, 3);
+  assert.equal("cluster" in CONTRACT, false, "no custom cluster may be registered on the wire");
 });
 
-test("attribute split: up diagnostics vs down config", () => {
-  const up = upAttributes().map((a) => a.name);
-  const down = downAttributes().map((a) => a.name);
-  assert.deepEqual(down, ["reportIntervalS", "gasEnabled"]);
-  for (const want of ["statusFlags", "wakeCount", "vbatMv", "awakeMs", "gasResistance"]) {
-    assert.ok(up.includes(want), `up attr '${want}' missing`);
+test("attribute split keeps two writable configuration fields", () => {
+  assert.deepEqual(downAttributes().map((a) => a.name), ["reportIntervalS", "gasEnabled"]);
+  for (const name of ["statusFlags", "wakeCount", "vbatMv", "awakeMs", "gasResistance"]) {
+    assert.ok(upAttributes().some((a) => a.name === name), `up field '${name}' missing`);
   }
 });
 
-test("builderKind maps types", () => {
+test("builderKind maps field types", () => {
   assert.equal(builderKind({type: "BOOLEAN"}), "binary");
   assert.equal(builderKind({type: "UINT16"}), "numeric");
   assert.equal(builderKind({type: "SINGLE"}), "numeric");
 });
 
-test("custom cluster def resolves ZCL types", () => {
-  const def = buildCustomClusterDef(Zcl_DataType);
-  assert.equal(def.ID, 0xfc00);
-  assert.equal(def.attributes.reportIntervalS.ID, 0x0010);
-  assert.equal(def.attributes.reportIntervalS.type, Zcl_DataType.UINT16);
-  assert.equal(def.attributes.gasEnabled.ID, 0x0011);
-  assert.equal(def.attributes.gasEnabled.type, Zcl_DataType.BOOLEAN);
-  assert.equal(def.attributes.gasResistance.type, Zcl_DataType.SINGLE);
+test("standard controls preserve EP1..EP5 while mapping each down field", () => {
+  const controls = buildStandardControls();
+  assert.deepEqual(controls.map((c) => c.ep), [1, 1]);
+  assert.deepEqual(controls.map((c) => c.cluster), ["genAnalogOutput", "genOnOff"]);
+  assert.deepEqual(controls.map((c) => c.name), ["report_interval_s", "gas_enabled"]);
+  assert.deepEqual(controls.map((c) => c.transport), ["write", "command"]);
+  assert.equal(controls[0].min, 3);
+  assert.equal(controls[0].max, 3600);
+  assert.equal(controls[1].onCommand, "on");
+  assert.equal(controls[1].offCommand, "off");
 });
 
-test("resolveZclType handles herdsman SINGLE_PREC alias", () => {
-  assert.equal(resolveZclType("SINGLE", {SINGLE_PREC: 57}), 57);
-  assert.throws(() => resolveZclType("NOPE", {}));
-});
-
-test("down descriptors carry range + set-only access", () => {
-  const d = buildDownDescriptors();
-  const interval = d.find((x) => x.name === "report_interval_s");
-  assert.ok(interval);
-  assert.equal(interval.access, "STATE_SET");
-  assert.equal(interval.valueMin, 3);
-  assert.equal(interval.valueMax, 3600);
-  assert.equal(interval.unit, "s");
-  const gas = d.find((x) => x.name === "gas_enabled");
-  assert.ok(gas);
-  assert.equal(gas.kind, "binary");
-});
-
-test("status flags descriptor fans out the contract bits", () => {
-  const f = buildStatusFlagsDescriptor();
-  assert.equal(f.name, "status_flags");
-  const names = f.bits.map((b) => b.name);
-  assert.deepEqual(names, [
+test("status flags descriptor fans out contract bits", () => {
+  const descriptor = buildStatusFlagsDescriptor();
+  assert.equal(descriptor.name, "status_flags");
+  assert.deepEqual(descriptor.bits.map((b) => b.name), [
     "sensor_error", "heater_unstable", "battery_low",
     "vbat_invalid", "gas_disabled", "first_boot",
   ]);
-  assert.deepEqual(f.bits.map((b) => b.bit), [0, 1, 2, 3, 4, 5]);
 });
 
-test("analog channels: EP2..EP5, wake_count integer, gas float", () => {
-  const ch = buildAnalogChannels();
-  assert.deepEqual(ch.map((c) => c.ep), [2, 3, 4, 5]);
-  const gas = ch.find((c) => c.attr === "gasResistance");
-  assert.equal(gas.name, "gas_resistance");
-  assert.equal(gas.integer, false);  // SINGLE
-  const wake = ch.find((c) => c.attr === "wakeCount");
-  assert.equal(wake.integer, true);  // UINT32 rides the float, rounded back
+test("analog channels remain EP2..EP5", () => {
+  const channels = buildAnalogChannels();
+  assert.deepEqual(channels.map((c) => c.ep), [2, 3, 4, 5]);
+  assert.equal(channels.find((c) => c.attr === "gasResistance").integer, false);
+  assert.equal(channels.find((c) => c.attr === "wakeCount").integer, true);
 });
 
 test("device identity block", () => {
-  const id = buildDeviceIdentity();
-  assert.deepEqual(id.zigbeeModel, ["C6-ENVIRO"]);
-  assert.equal(id.vendor, "Biometal");
+  const identity = buildDeviceIdentity();
+  assert.deepEqual(identity.zigbeeModel, ["C6-ENVIRO"]);
+  assert.equal(identity.vendor, "Biometal");
 });

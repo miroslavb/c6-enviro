@@ -87,14 +87,15 @@ static uint16_t s_hum_c100     = 0;            // 0x0405 measuredValue, %×100
 static int16_t  s_press_hpa    = 0;            // 0x0403 measuredValue, hPa (0.1 kPa)
 static uint8_t  s_batt_voltage = 0xFF;         // 0x0001/0x0020, 100 mV units
 static uint8_t  s_batt_pct     = 0;            // 0x0001/0x0021, 0.5 % units
-// Custom cluster (diagnostics, readable; down attrs mirrored).
-static uint16_t s_status       = 0;
-static uint32_t s_wake_count   = 0;
-static uint16_t s_vbat_mv      = 0;
-static uint16_t s_awake_ms     = 0;
-static float    s_gas_ohm      = 0.0f;
-static uint16_t s_interval_s   = DEFAULT_REPORT_INTERVAL_S;
-static bool     s_gas_enabled  = DEFAULT_GAS_ENABLED != 0;
+// EP1 standard downlink controls. Custom-cluster writes are rejected by the
+// ESP-Zigbee compat layer with NOT_AUTHORIZED even when declared READ_WRITE.
+// Keep both standard controls on EP1 so the proven five-endpoint interview
+// surface remains EP1..EP5.
+static uint16_t s_status             = 0;
+static float    s_report_interval_ao = DEFAULT_REPORT_INTERVAL_S;
+static bool     s_gas_enabled        = DEFAULT_GAS_ENABLED != 0;
+static bool     s_control_oos        = false;
+static uint8_t  s_control_status     = 0;
 // Analog Input presentValue storage (ZCL attribute memory — must be static).
 static float    s_ai_value[AI_EP_COUNT] = {0};
 static bool     s_ai_oos    = false;
@@ -104,32 +105,40 @@ static char     s_ai_desc[AI_EP_COUNT][1 + 24];
 // ===========================================================================
 // Cluster / endpoint construction
 // ===========================================================================
-static esp_zb_attribute_list_t *build_custom_cluster(void)
+static esp_zb_attribute_list_t *build_report_interval_output(void)
 {
-    esp_zb_attribute_list_t *cl = esp_zb_zcl_attr_list_create(ENVIRO_CLUSTER_ID);
+    esp_zb_attribute_list_t *al =
+        esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT);
+    // Analog Input and Output share these mandatory attribute identifiers.
+    // The explicit READ_WRITE presentValue is the standard write path proven
+    // on the sibling C6-LCD firmware.
+    esp_zb_custom_cluster_add_custom_attr(al,
+        ESP_ZB_ZCL_ATTR_ANALOG_INPUT_OUT_OF_SERVICE_ID,
+        ESP_ZB_ZCL_ATTR_TYPE_BOOL, ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY,
+        &s_control_oos);
+    esp_zb_custom_cluster_add_custom_attr(al,
+        CTRL_REPORT_INTERVAL_S_ATTR_ID,
+        ESP_ZB_ZCL_ATTR_TYPE_SINGLE,
+        ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE,
+        &s_report_interval_ao);
+    esp_zb_custom_cluster_add_custom_attr(al,
+        ESP_ZB_ZCL_ATTR_ANALOG_INPUT_STATUS_FLAGS_ID,
+        ESP_ZB_ZCL_ATTR_TYPE_8BITMAP, ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY,
+        &s_control_status);
+    return al;
+}
 
-    // Diagnostics: readable, NOT reported (incoming custom-cluster frames are
-    // undecodable in the Z2M addon — reports would only produce log noise).
-    const uint8_t ro = ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY;
-    esp_zb_custom_cluster_add_custom_attr(cl, ATTR_STATUS_FLAGS,   ATTRTYPE_STATUS_FLAGS,   ro, &s_status);
-    esp_zb_custom_cluster_add_custom_attr(cl, ATTR_WAKE_COUNT,     ATTRTYPE_WAKE_COUNT,     ro, &s_wake_count);
-    esp_zb_custom_cluster_add_custom_attr(cl, ATTR_VBAT_MV,        ATTRTYPE_VBAT_MV,        ro, &s_vbat_mv);
-    esp_zb_custom_cluster_add_custom_attr(cl, ATTR_AWAKE_MS,       ATTRTYPE_AWAKE_MS,       ro, &s_awake_ms);
-    esp_zb_custom_cluster_add_custom_attr(cl, ATTR_GAS_RESISTANCE, ATTRTYPE_GAS_RESISTANCE, ro, &s_gas_ohm);
-
-    // Config: coordinator writes → READ | WRITE. Persisted to NVS on write.
-    const uint8_t rw = ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE;
-    esp_zb_custom_cluster_add_custom_attr(cl, ATTR_REPORT_INTERVAL_S, ATTRTYPE_REPORT_INTERVAL_S, rw, &s_interval_s);
-    esp_zb_custom_cluster_add_custom_attr(cl, ATTR_GAS_ENABLED,       ATTRTYPE_GAS_ENABLED,       rw, &s_gas_enabled);
-
-    return cl;
+static esp_zb_attribute_list_t *build_gas_enabled_on_off(void)
+{
+    esp_zb_on_off_cluster_cfg_t cfg = { .on_off = s_gas_enabled };
+    return esp_zb_on_off_cluster_create(&cfg);
 }
 
 static esp_zb_ep_list_t *build_endpoint(void)
 {
     esp_zb_ep_list_t *ep_list = esp_zb_ep_list_create();
 
-    // ---- EP1: Basic + Identify + PowerConfig + T/H/P + custom config ----
+    // ---- EP1: Basic + Identify + PowerConfig + T/H/P + standard controls ----
     esp_zb_cluster_list_t *clusters = esp_zb_zcl_cluster_list_create();
 
     // Basic identity from the contract (so Z2M matches the converter).
@@ -214,9 +223,13 @@ static esp_zb_ep_list_t *build_endpoint(void)
         ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &press_max);
     esp_zb_cluster_list_add_pressure_meas_cluster(clusters, press, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
 
-    // Custom enviro cluster (config writes + diagnostics reads).
-    esp_zb_cluster_list_add_custom_cluster(clusters, build_custom_cluster(),
-                                           ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+    // Standard config plane: report interval = Analog Output presentValue;
+    // gas heater = On/Off command. Both clusters are on EP1 to avoid creating
+    // extra endpoint descriptors for this sleepy device.
+    esp_zb_cluster_list_add_analog_output_cluster(clusters,
+        build_report_interval_output(), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+    esp_zb_cluster_list_add_on_off_cluster(clusters,
+        build_gas_enabled_on_off(), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
 
     esp_zb_endpoint_config_t ep_cfg = {
         .endpoint           = HA_ENDPOINT,
@@ -445,7 +458,7 @@ static void push_cb(uint8_t param)
         if (zst != ESP_ZB_ZCL_STATUS_SUCCESS) ESP_LOGW(TAG, "set batt %% -> zcl status 0x%02x", zst);
     }
 
-    // ---- Status bitmask + custom diagnostics ----
+    // ---- Status bitmask ----
     const cycle_status_t st = {
         .sensor_error    = !m->sensor_ok,
         .heater_unstable = m->sensor_ok && g_config.gas_enabled && !m->heater_stable,
@@ -457,20 +470,6 @@ static void push_cb(uint8_t param)
     s_status = cycle_status_flags(&st,
         ST_BIT_SENSOR_ERROR, ST_BIT_HEATER_UNSTABLE, ST_BIT_BATTERY_LOW,
         ST_BIT_VBAT_INVALID, ST_BIT_GAS_DISABLED, ST_BIT_FIRST_BOOT);
-    s_wake_count = m->wake_count;
-    s_vbat_mv    = m->vbat_mv;
-    s_awake_ms   = m->awake_ms;
-    s_gas_ohm    = (float)m->gas_ohm;
-
-    esp_zb_zcl_set_attribute_val(HA_ENDPOINT, ENVIRO_CLUSTER_ID, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
-                                 ATTR_STATUS_FLAGS, &s_status, false);
-    esp_zb_zcl_set_attribute_val(HA_ENDPOINT, ENVIRO_CLUSTER_ID, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
-                                 ATTR_WAKE_COUNT, &s_wake_count, false);
-    esp_zb_zcl_set_attribute_val(HA_ENDPOINT, ENVIRO_CLUSTER_ID, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
-                                 ATTR_VBAT_MV, &s_vbat_mv, false);
-    esp_zb_zcl_set_attribute_val(HA_ENDPOINT, ENVIRO_CLUSTER_ID, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
-                                 ATTR_AWAKE_MS, &s_awake_ms, false);
-
     // ---- Analog Input mirrors (the reported UP-path) ----
     set_ai_present_value(AI_EP_GAS_RESISTANCE, (float)m->gas_ohm);
     set_ai_present_value(AI_EP_VBAT_MV,        (float)m->vbat_mv);
@@ -494,28 +493,51 @@ void zb_device_push_measurement(void)
 static esp_err_t handle_set_attr(const esp_zb_zcl_set_attr_value_message_t *m)
 {
     if (m == NULL || m->info.status != ESP_ZB_ZCL_STATUS_SUCCESS) return ESP_OK;
-    if (m->info.cluster != ENVIRO_CLUSTER_ID) return ESP_OK;
 
+    const uint16_t cluster = m->info.cluster;
     const uint16_t attr_id = m->attribute.id;
     const void    *val     = m->attribute.data.value;
+    const uint8_t  ep      = m->info.dst_endpoint;
     if (!val) return ESP_OK;
 
     bool changed = false;
-    if (attr_id == ATTR_REPORT_INTERVAL_S) {
-        uint16_t v = cycle_clamp_interval_s(*(uint16_t *)val,
-                                            MIN_REPORT_INTERVAL_S, MAX_REPORT_INTERVAL_S);
-        s_interval_s = v;
+    if (cluster == CTRL_REPORT_INTERVAL_S_CLUSTER_ID &&
+        ep == CTRL_REPORT_INTERVAL_S_EP &&
+        attr_id == CTRL_REPORT_INTERVAL_S_ATTR_ID) {
+        const float requested = *(const float *)val;
+        if (!(requested == requested)) { // reject NaN without a libm dependency
+            ESP_LOGW(TAG, "ignoring non-finite report interval");
+            return ESP_OK;
+        }
+        float bounded = requested;
+        if (bounded < MIN_REPORT_INTERVAL_S) bounded = MIN_REPORT_INTERVAL_S;
+        if (bounded > MAX_REPORT_INTERVAL_S) bounded = MAX_REPORT_INTERVAL_S;
+        const uint16_t v = cycle_clamp_interval_s((uint16_t)(bounded + 0.5f),
+                                                   MIN_REPORT_INTERVAL_S,
+                                                   MAX_REPORT_INTERVAL_S);
+        s_report_interval_ao = (float)v;
         g_config.report_interval_s = v;
+        // Replace the raw float accepted by the stack with the canonical value
+        // so a subsequent standard-cluster read returns the persisted interval.
+        esp_zb_zcl_set_attribute_val(CTRL_REPORT_INTERVAL_S_EP,
+            ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+            ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+            CTRL_REPORT_INTERVAL_S_ATTR_ID, &s_report_interval_ao, false);
         changed = true;
         ESP_LOGI(TAG, "report interval -> %u s", (unsigned)v);
-    } else if (attr_id == ATTR_GAS_ENABLED) {
-        bool v = *(bool *)val;
-        s_gas_enabled = v;
-        g_config.gas_enabled = v;
+    } else if (cluster == CTRL_GAS_ENABLED_CLUSTER_ID &&
+               ep == CTRL_GAS_ENABLED_EP &&
+               attr_id == CTRL_GAS_ENABLED_ATTR_ID) {
+        const bool enabled = *(const bool *)val;
+        s_gas_enabled = enabled;
+        g_config.gas_enabled = enabled;
         changed = true;
-        ESP_LOGI(TAG, "gas heater -> %s", v ? "enabled" : "disabled");
+        ESP_LOGI(TAG, "gas heater -> %s", enabled ? "enabled" : "disabled");
     }
-    if (changed) app_config_save(&g_config);
+    if (changed) {
+        esp_err_t err = app_config_save(&g_config);
+        if (err != ESP_OK) ESP_LOGE(TAG, "config save failed: %s", esp_err_to_name(err));
+    }
     return ESP_OK;
 }
 
@@ -716,9 +738,9 @@ esp_err_t zb_device_start(zb_event_cb_t cb, bool commissioning_boot)
         return err;
     }
 
-    // Mirror the persisted config into the ZCL attribute store before the
-    // endpoint is registered, so HA reads back the live values.
-    s_interval_s  = g_config.report_interval_s;
+    // Mirror persisted config into the standard-cluster backing store before
+    // endpoint registration, so a Z2M read sees the current values.
+    s_report_interval_ao = (float)g_config.report_interval_s;
     s_gas_enabled = g_config.gas_enabled;
 
     BaseType_t ok = xTaskCreate(zb_task, "zb_main", 8192, NULL, 5, NULL);

@@ -158,10 +158,10 @@ void app_main(void)
     }
     app_config_load(&g_config);
 
-    // 2. Status LED: only on a cold boot (deep-sleep wakes stay dark — the
-    //    WS2812 costs real battery; see docs/HARDWARE.md on its parasitic
-    //    draw and the desolder option).
-    if (led_init() == ESP_OK && first_boot) {
+    // 2. Status LED: only initialise it on a cold boot. `&&` evaluates
+    // left-to-right in C, so first_boot MUST be the left operand; putting
+    // led_init() first wakes the RMT/WS2812 driver on every timer wake.
+    if (first_boot && led_init() == ESP_OK) {
         led_show_status(LED_STATUS_BOOT);
     }
 

@@ -50,11 +50,12 @@ The C6 chip itself sleeps at ~7 µA, **but the Super Mini board doesn't**:
 - the onboard LDO adds its quiescent (varies by clone).
 
 Community measurements put the board at **~50–400 µA** in deep sleep depending on the
-clone and whether the WS2812 is removed. For true µA-class sleep: **desolder the
-WS2812** (the firmware only uses it for commissioning status — you lose nothing but
-the colors) and, if you're fanatical, the blue power/status LED too. At the default
-3 s cadence none of this matters (the awake cycles dominate); at 30+ min intervals it
-becomes the main consumer.
+clone and whether the WS2812 is removed. Firmware initializes the WS2812/RMT only on
+cold boots (`first_boot && led_init()`); timer deep-sleep wakes never touch the RGB
+hardware. For true µA-class sleep: **desolder the WS2812** (the firmware only uses it
+for commissioning status — you lose nothing but the colors) and, if you're fanatical,
+the blue power/status LED too. At the default 3 s cadence none of this matters (the
+awake cycles dominate); at 30+ min intervals it becomes the main consumer.
 
 ## Buttons
 

@@ -1,7 +1,7 @@
 {
   "$schema": "./contract.schema.note.md",
-  "_doc": "SINGLE SOURCE OF TRUTH for the Zigbee byte-contract shared by firmware (C), the Z2M converter (JS) and the HA docs. Edit ONLY this file, then run `node contract/codegen.mjs`. CI fails if the generated files drift (contract/contract.test.mjs). This project: ESP32-C6 Super Mini + BME680 + Waveshare Solar Power Manager -> sleepy Zigbee end device for Home Assistant.",
-  "version": 2,
+  "_doc": "SINGLE SOURCE OF TRUTH for the Zigbee contract shared by firmware (C), the Z2M converter (JS) and the HA docs. Edit ONLY this file, then run `node contract/codegen.mjs`. CI fails if the generated files drift (contract/contract.test.mjs). This project: ESP32-C6 Super Mini + BME680 + Waveshare Solar Power Manager -> sleepy Zigbee end device.",
+  "version": 3,
   "device": {
     "manufacturerName": "Biometal",
     "modelId": "C6-ENVIRO",
@@ -10,14 +10,7 @@
     "powerSource": 3,
     "_powerSourceNote": "0x03 = Battery. Solar-charged Li-ion behind the Waveshare Solar Power Manager. Sleepy-end-device role comes from the ZED build + rx_on_when_idle=false, not from this cosmetic field."
   },
-  "manufacturerCode": 4891,
-  "_manufacturerCodeNote": "0x131B = Espressif Systems' allocated ZCL manufacturer code. MUST be identical in firmware (on the wire) and in the converter, or manufacturer-specific attribute reads/writes silently fail as 'attribute not found'.",
-  "customCluster": {
-    "name": "biometalEnviro",
-    "id": 64512,
-    "_idNote": "0xFC00 — manufacturer-specific cluster range (0xFC00-0xFFFF). DOWN config writes only; UP telemetry rides STANDARD clusters (see _upPathNote)."
-  },
-  "_upPathNote": "Lesson inherited from c6-radiometer (proven live 2026-07-11): the Z2M addon environment cannot decode INCOMING custom-cluster frames (endpoint->registry lookup loses the attached cluster; msg.cluster undefined; no fz converter matches). So ALL device->HA telemetry travels on STANDARD clusters: Temperature 0x0402 / Humidity 0x0405 / Pressure 0x0403 / PowerConfig 0x0001 on EP1, plus one genAnalogInput (0x000C) endpoint per non-standard channel (gas resistance, status flags, precise vbat, wake counter). The custom cluster carries ONLY the HA->device config writes below (outgoing framing from the converter is proven to work).",
+  "_transportNote": "v3 deliberately has no manufacturer-specific custom cluster on the wire. ESP-Zigbee's compat stack returned NOT_AUTHORIZED for custom-cluster writes even when attributes were registered READ_WRITE. All device→HA telemetry and HA→device controls therefore use standard ZCL clusters.",
   "_exposeNote": "`expose` is the canonical HA-facing property name: the Z2M expose `name` (-> HA entity object_id) AND, for `down` attrs, the key in `zigbee2mqtt/<device>/set`.",
   "attributes": [
     { "name": "statusFlags",     "expose": "status_flags",      "id": 0,  "type": "UINT16",  "dir": "up",                  "desc": "Sensor + power status bitmask (see statusBits); mirrored on AI EP4" },
@@ -28,6 +21,11 @@
     { "name": "reportIntervalS", "expose": "report_interval_s", "id": 16, "type": "UINT16",  "dir": "down", "unit": "s",   "default": 3, "min": 3, "max": 3600, "desc": "Deep-sleep measurement/report period, seconds (3 s default; raise to 60+ for battery-only operation)" },
     { "name": "gasEnabled",      "expose": "gas_enabled",       "id": 17, "type": "BOOLEAN", "dir": "down", "default": 1,  "desc": "Run the BME680 gas heater each cycle (heater burns ~12 mA for 150 ms; disable to save battery)" }
   ],
+  "standardControls": [
+    { "attr": "reportIntervalS", "name": "report_interval_s", "ep": 1, "cluster": "genAnalogOutput", "clusterId": 13, "attribute": "presentValue", "attributeId": 85, "transport": "write" },
+    { "attr": "gasEnabled", "name": "gas_enabled", "ep": 1, "cluster": "genOnOff", "clusterId": 6, "attribute": "onOff", "attributeId": 0, "transport": "command", "onCommand": "on", "offCommand": "off" }
+  ],
+  "_standardControlsNote": "Both control clusters live on EP1 so the sleepy-device interview surface remains exactly EP1..EP5. report_interval_s uses the spec-writable Analog Output presentValue (SINGLE) and is rounded/clamped to 3..3600 s by both converter and firmware. gas_enabled uses standard On/Off commands; the firmware persists the resulting onOff value in NVS.",
   "analogEndpoints": [
     { "ep": 2, "attr": "gasResistance", "description": "gas ohm" },
     { "ep": 3, "attr": "vbatMv",        "description": "vbat mV" },

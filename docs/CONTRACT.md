@@ -1,13 +1,12 @@
-# Zigbee byte-contract (generated)
+# Zigbee contract (generated)
 
 > AUTO-GENERATED from `contract/contract.json` by `contract/codegen.mjs` — do not edit by hand.
 
 - **Device**: manufacturerName `Biometal`, modelId `C6-ENVIRO`, powerSource `0x03` (Battery)
-- **Role**: sleepy Zigbee END DEVICE (deep sleep between cycles; rx_on_when_idle = false)
-- **manufacturerCode**: `0x131B` (Espressif) — identical on firmware + converter or manufacturer-specific writes fail
-- **Custom cluster**: `biometalEnviro` = `0xFC00` — DOWN config writes only
+- **Role**: sleepy Zigbee END DEVICE (deep sleep between cycles; `rx_on_when_idle=false`)
+- **Wire rule**: no manufacturer-specific custom cluster is registered. Both telemetry and control use standard ZCL clusters.
 
-## Standard clusters (EP1) — the main telemetry path
+## Standard clusters (EP1) — telemetry
 
 | Cluster | ID | Attribute | Encoding | Source |
 |---|---|---|---|---|
@@ -16,32 +15,36 @@
 | Relative Humidity | 0x0405 | `measuredValue` | uint16, % × 100 | BME680 humidity |
 | Power Configuration | 0x0001 | `batteryVoltage 0x0020 / batteryPercentageRemaining 0x0021` | uint8 100 mV / uint8 0.5 % | battery ADC via divider |
 
-Z2M decodes these natively (zero custom glue): `temperature`, `humidity`, `pressure`, `battery`, `voltage`. `linkquality` is added automatically.
+## Standard control transport (EP1) — HA → device
 
-## Analog Input endpoints (standard genAnalogInput 0x000C) — non-standard channels
+| HA key | Field | Cluster | ID | Attribute / command | Transport | Persistence |
+|---|---|---|---|---|---|---|
+| `report_interval_s` | `reportIntervalS` | genAnalogOutput | 0x000D | `presentValue` | write | NVS |
+| ↳ range | — | — | — | 3…3600 s | firmware + converter clamp | — |
+| `gas_enabled` | `gasEnabled` | genOnOff | 0x0006 | `on` / `off` | command | NVS |
 
-| EP | Channel | Custom-cluster attr mirrored |
+The two control clusters share EP1 with the measurement clusters; EP2…EP5 remain the four Analog Input telemetry endpoints, preserving the sleepy-device interview surface `EP1…EP5`.
+
+## Analog Input endpoints (standard `genAnalogInput` 0x000C)
+
+| EP | Channel | Domain field |
 |---|---|---|
 | 2 | gas ohm | `gasResistance` |
 | 3 | vbat mV | `vbatMv` |
 | 4 | status flags | `statusFlags` |
 | 5 | wake count | `wakeCount` |
 
-The Z2M addon cannot decode INCOMING custom-cluster frames (endpoint→registry lookup loses the attached cluster → `msg.cluster` undefined → no converter matches; proven live 2026-07-11 on c6-radiometer). Non-standard telemetry therefore travels on STANDARD `genAnalogInput` clusters — one endpoint per channel, value in `presentValue` (SINGLE float), reported by the stack engine. `wakeCount` changes every cycle, guaranteeing ≥1 report per wake.
+## Domain fields
 
-## Custom-cluster attributes
-
-| Attr | HA key (`expose`) | ID | Type | Dir | Unit | Default | Range | Purpose |
-|---|---|---|---|---|---|---|---|---|
-| `statusFlags` | `status_flags` | 0x0000 | UINT16 | up | — | — | — | Sensor + power status bitmask (see statusBits); mirrored on AI EP4 |
-| `wakeCount` | `wake_count` | 0x0001 | UINT32 | up | — | — | — | Deep-sleep wake counter since power-on; increments every cycle, so HA sees one report per wake |
-| `vbatMv` | `vbat_mv` | 0x0002 | UINT16 | up | mV | — | — | Battery voltage, millivolts (precise; PowerConfig 0x0020 only has 100 mV steps) |
-| `awakeMs` | `awake_ms` | 0x0003 | UINT16 | up | ms | — | — | Duration of the previous wake cycle, ms (deep-sleep duty-cycle diagnostic) |
-| `gasResistance` | `gas_resistance` | 0x0004 | SINGLE | up | Ω | — | — | BME680 gas sensor resistance, ohms (higher = cleaner air); mirrored on AI EP2 |
-| `reportIntervalS` | `report_interval_s` | 0x0010 | UINT16 | down | s | 3 | 3…3600 | Deep-sleep measurement/report period, seconds (3 s default; raise to 60+ for battery-only operation) |
-| `gasEnabled` | `gas_enabled` | 0x0011 | BOOLEAN | down | — | 1 | — | Run the BME680 gas heater each cycle (heater burns ~12 mA for 150 ms; disable to save battery) |
-
-`up` attributes are readable on the custom cluster (diagnostics; NOT reported — reports would arrive undecodable, see above). `down` attributes are written HA→device via `zigbee2mqtt/<device>/set`; the firmware persists them in NVS so they survive deep sleep and power loss.
+| Field | HA key (`expose`) | Type | Dir | Unit | Default | Range | Purpose |
+|---|---|---|---|---|---|---|---|
+| `statusFlags` | `status_flags` | UINT16 | up | — | — | — | Sensor + power status bitmask (see statusBits); mirrored on AI EP4 |
+| `wakeCount` | `wake_count` | UINT32 | up | — | — | — | Deep-sleep wake counter since power-on; increments every cycle, so HA sees one report per wake |
+| `vbatMv` | `vbat_mv` | UINT16 | up | mV | — | — | Battery voltage, millivolts (precise; PowerConfig 0x0020 only has 100 mV steps) |
+| `awakeMs` | `awake_ms` | UINT16 | up | ms | — | — | Duration of the previous wake cycle, ms (deep-sleep duty-cycle diagnostic) |
+| `gasResistance` | `gas_resistance` | SINGLE | up | Ω | — | — | BME680 gas sensor resistance, ohms (higher = cleaner air); mirrored on AI EP2 |
+| `reportIntervalS` | `report_interval_s` | UINT16 | down | s | 3 | 3…3600 | Deep-sleep measurement/report period, seconds (3 s default; raise to 60+ for battery-only operation) |
+| `gasEnabled` | `gas_enabled` | BOOLEAN | down | — | 1 | — | Run the BME680 gas heater each cycle (heater burns ~12 mA for 150 ms; disable to save battery) |
 
 ## Sensor + power status bitmask (`statusFlags`)
 
@@ -56,5 +59,5 @@ The Z2M addon cannot decode INCOMING custom-cluster frames (endpoint→registry 
 
 ## Constants
 
-- `batteryLowMv` = 3400 — below this the `battery_low` bit is raised
-- `awakeWindowS` = 300 — stay-awake window after factory-new join / BOOT press so the Z2M interview completes
+- `batteryLowMv` = 3400
+- `awakeWindowS` = 300

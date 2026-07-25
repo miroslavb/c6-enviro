@@ -13,8 +13,7 @@ export const Zcl_DataType = {
 };
 
 export const CONTRACT = {
-  "version": 2,
-  "manufacturerCode": 4891,
+  "version": 3,
   "device": {
     "manufacturerName": "Biometal",
     "modelId": "C6-ENVIRO",
@@ -22,10 +21,6 @@ export const CONTRACT = {
     "description": "ESP32-C6 solar environment sensor: BME680 (T/RH/P/gas) + battery telemetry, deep-sleep Zigbee end device",
     "powerSource": 3,
     "_powerSourceNote": "0x03 = Battery. Solar-charged Li-ion behind the Waveshare Solar Power Manager. Sleepy-end-device role comes from the ZED build + rx_on_when_idle=false, not from this cosmetic field."
-  },
-  "cluster": {
-    "name": "biometalEnviro",
-    "id": 64512
   },
   "attributes": [
     {
@@ -132,6 +127,30 @@ export const CONTRACT = {
       "optional": false,
       "report": false,
       "desc": "Run the BME680 gas heater each cycle (heater burns ~12 mA for 150 ms; disable to save battery)"
+    }
+  ],
+  "standardControls": [
+    {
+      "attr": "reportIntervalS",
+      "name": "report_interval_s",
+      "ep": 1,
+      "cluster": "genAnalogOutput",
+      "clusterId": 13,
+      "attribute": "presentValue",
+      "attributeId": 85,
+      "transport": "write"
+    },
+    {
+      "attr": "gasEnabled",
+      "name": "gas_enabled",
+      "ep": 1,
+      "cluster": "genOnOff",
+      "clusterId": 6,
+      "attribute": "onOff",
+      "attributeId": 0,
+      "transport": "command",
+      "onCommand": "on",
+      "offCommand": "off"
     }
   ],
   "analogEndpoints": [

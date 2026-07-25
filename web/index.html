@@ -105,6 +105,23 @@
       <button id="eraseBtn" class="btn big" type="button">Recover device (erase flash only)</button>
     </section>
 
+    <!-- ===================== POWER SETTINGS PAYLOAD ===================== -->
+    <section class="card" id="powerSettings">
+      <h2>Power settings — apply after pairing</h2>
+      <p class="hint">
+        Choose the desired cadence and gas-heater state, then copy the exact
+        Zigbee2MQTT payload. This panel <b>does not write configuration over USB</b>:
+        a routine flash never overwrites the device's NVS or Zigbee pairing.
+      </p>
+      <label class="lbl" for="reportIntervalS">Report interval (seconds, 3…3600)</label>
+      <input id="reportIntervalS" class="select" type="number" min="3" max="3600" step="1" value="3" inputmode="numeric" />
+      <label class="check"><input id="gasEnabled" type="checkbox" checked /> Enable the BME680 gas heater</label>
+      <p class="hint small">The heater runs a short ~12 mA burst each cycle. Disable it when you only need temperature, humidity and pressure.</p>
+      <pre id="z2mPayload" class="log" aria-label="Zigbee2MQTT settings payload"></pre>
+      <button id="copyZ2mPayload" class="btn big" type="button">Copy Zigbee2MQTT payload</button>
+      <p id="z2mPayloadStatus" class="hint small">After the new converter is installed, paste this in the C6 Enviro Zigbee2MQTT device page or publish it to <code>zigbee2mqtt/C6 Enviro/set</code>.</p>
+    </section>
+
     <!-- ===================== AFTER FLASHING / PAIRING ===================== -->
     <section class="card success-soft">
       <h2>After flashing — pairing (order matters for a sleepy device)</h2>
@@ -120,7 +137,7 @@
       <p class="hint small">
         Wake a sleeping device: press <b>BOOT</b> briefly (it stays awake 5 more minutes).
         Re-pair on a new network: <b>hold BOOT ≥3 s</b> → Zigbee factory reset.
-        Change the 3 s cadence from HA: <code>report_interval_s</code> (survives reboot & power loss).
+        Use the power-settings payload above to set <code>report_interval_s</code> and <code>gas_enabled</code>; both survive reboot and power loss.
       </p>
     </section>
 
@@ -159,6 +176,6 @@
     <span><a href="https://github.com/miroslavb/c6-enviro" target="_blank" rel="noopener">source on GitHub</a></span>
   </footer>
 
-  <script type="module" src="js/app.js?v=0.1.10"></script>
+  <script type="module" src="js/app.js?v=0.1.11"></script>
 </body>
 </html>

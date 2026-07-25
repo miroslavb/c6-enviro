@@ -1,39 +1,24 @@
 // app.js — installer entry point for the C6-ENVIRO sensor (ESP32-C6 Super Mini).
 //
-// Single-purpose page: detect Web-Serial support + secure context, then wire the
-// "Connect & Flash" and "Recover (erase only)" buttons to flash.js. There is no
-// keyboard view, no WiFi form, no relay, no cfg-blob — the device talks to Home
-// Assistant over Zigbee, so nothing needs to be baked in at flash time.
-import { initFlash } from './flash.js?v=0.1.10';
+// Detect Web-Serial support, wire flashing/recovery, and render a safe
+// Zigbee2MQTT settings payload. The page never writes configuration to NVS:
+// routine browser flashes preserve the existing device pairing and settings.
+import { initFlash } from './flash.js?v=0.1.11';
 
 const $ = (id) => document.getElementById(id);
 
-/**
- * Decide whether this browser/context can flash at all and, if not, show a
- * specific reason. Web Serial requires (a) a Chromium-family browser that
- * implements `navigator.serial` and (b) a secure context (HTTPS or localhost).
- * We distinguish the two so the user gets actionable advice.
- *
- * @returns {boolean} true if flashing is possible.
- */
 function checkEnvironment() {
   const hasSerial = 'serial' in navigator;
-  // `isSecureContext` is true for https:// and for http://localhost — Web Serial
-  // is gated on it independently of the API's mere presence.
   const secure = window.isSecureContext;
-
   if (hasSerial && secure) return true;
 
   const warn = $('serialWarn');
   const msg = $('serialWarnMsg');
   if (hasSerial && !secure) {
-    // The API exists but we're not in a secure context (e.g. served over plain
-    // http:// to a non-localhost host). requestPort() would throw.
     msg.innerHTML =
       'This page is not running in a <b>secure context</b>. Web Serial flashing requires ' +
       '<b>HTTPS</b> (or <code>localhost</code>). Reopen this page over an <code>https://</code> URL.';
   } else {
-    // No navigator.serial at all → wrong browser (Firefox/Safari, or iOS).
     msg.innerHTML =
       "This browser doesn't support the <b>Web Serial</b> API. Use <b>Chrome</b> or <b>Edge</b> " +
       'on desktop (or Chrome on Android) over <b>HTTPS</b> to flash the device.';
@@ -44,7 +29,45 @@ function checkEnvironment() {
   return false;
 }
 
+function initPowerSettings() {
+  const interval = $('reportIntervalS');
+  const gas = $('gasEnabled');
+  const payload = $('z2mPayload');
+  const copy = $('copyZ2mPayload');
+  const status = $('z2mPayloadStatus');
+  if (!interval || !gas || !payload || !copy || !status) return;
+
+  function current() {
+    let seconds = Number(interval.value);
+    if (!Number.isFinite(seconds)) seconds = 3;
+    seconds = Math.max(3, Math.min(3600, Math.round(seconds)));
+    interval.value = String(seconds);
+    return {
+      report_interval_s: seconds,
+      gas_enabled: gas.checked ? 'ON' : 'OFF',
+    };
+  }
+
+  function render() {
+    payload.textContent = JSON.stringify(current(), null, 2);
+  }
+
+  interval.addEventListener('input', render);
+  interval.addEventListener('change', render);
+  gas.addEventListener('change', render);
+  copy.addEventListener('click', async () => {
+    const text = JSON.stringify(current());
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');
+      await navigator.clipboard.writeText(text);
+      status.textContent = 'Copied. In Zigbee2MQTT, paste it into C6 Enviro → Dev console / Set, or publish it to zigbee2mqtt/C6 Enviro/set.';
+    } catch {
+      status.textContent = `Copy this payload manually: ${text}`;
+    }
+  });
+  render();
+}
+
 const supported = checkEnvironment();
-// Always wire the buttons (initFlash also feature-gates internally); when the
-// environment is unsupported they're already disabled above.
+initPowerSettings();
 initFlash({ supported });

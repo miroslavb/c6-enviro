@@ -14,7 +14,7 @@ Below: the ones that shaped this firmware, plus everything new.
 ## A. Inherited and still binding (short form)
 
 1. **esptool-js 0.5.7 vendored, compression ON; 115200 with `romBaudrate === baudrate`;
-   erase-first default ON; data as chunked binary STRINGS; `hardReset()` in try/catch;
+   erase-first default OFF; data as chunked binary STRINGS; `hardReset()` in try/catch;
    HTTPS + Chrome/Edge only.** [kbd] — the entire flasher stack, reused verbatim.
 2. **C6 bootloader at offset 0x0; read real offsets from `flasher_args.json`.** [kbd→C6]
 3. **Hold BOOT (GPIO9) → plug USB = the primary un-stick path** for the C6's flaky
@@ -24,9 +24,11 @@ Below: the ones that shaped this firmware, plus everything new.
    `ESP_ZB_ZR/ED_CONFIG()` macros don't exist — build `esp_zb_cfg_t` by hand.** [C6 #27]
 6. **`zb_storage` partition subtype MUST be `nvs`** (the 1.x-era `fat` makes
    `nvs_open_from_partition` fail → `esp_zb_init` abort()s), and init it defensively. [rad]
-7. **Z2M addon cannot decode INCOMING custom-cluster frames** (`msg.cluster` undefined →
-   'No converter available', proven live 2026-07-11) → **UP telemetry on STANDARD
-   clusters only**; custom cluster for DOWN writes. [rad]
+7. **Custom clusters are unsafe in both directions on the current Z2M + ESP-Zigbee compat path.**
+   *Symptom:* Z2M cannot decode incoming custom reports (`msg.cluster` undefined), and
+   custom `READ_WRITE` attributes return `NOT_AUTHORIZED` on the device. *Fix:* **all
+   telemetry and controls ride standard clusters**; v0.1.11 maps interval to
+   `genAnalogOutput.presentValue` and gas enable to `genOnOff` commands on EP1. [rad/env]
 8. **Manual `esp_zb_zcl_report_attr_cmd_req` never emitted a single frame** across five
    variants (and correlated with a reboot loop) → use the **stack reporting engine**:
    self-bind to the coordinator + `esp_zb_zcl_update_reporting_info`. [rad]
@@ -37,8 +39,9 @@ Below: the ones that shaped this firmware, plus everything new.
     ("the great rejoin saga of 2026-07-10"). [rad]
 11. **Channel: primary = coordinator's (11), secondary = all; permit-join must be open
     or steering fails silently.** [C6/rad]
-12. **manufacturerCode 0x131B identical in firmware and converter or every
-    manufacturer-specific op silently fails; contract-driven codegen prevents drift.** [C6]
+12. **A standard-cluster control plane avoids manufacturer-code coupling.**
+    The current Enviro converter uses `genAnalogOutput` / `genOnOff`; do not add
+    manufacturer-specific writes back merely to reuse an old field ID. [env]
 
 ## B. New in this project [env]
 
@@ -174,3 +177,13 @@ Below: the ones that shaped this firmware, plus everything new.
     v0.1.10 therefore starts the same bounded 200 ms sleepy polling immediately before
     `ESP_ZB_BDB_MODE_NETWORK_STEERING`, so the parent's buffered trust-center transport
     key can be delivered. It does not enable `rx_on_when_idle`.
+38. **Custom `READ_WRITE` does not imply a writable wire attribute in ESP-Zigbee compat.**
+    Live 2026-07-25 Z2M writes to Enviro attrs `0x0010`/`0x0011` returned
+    `NOT_AUTHORIZED`; use only the standard v0.1.11 EP1 control plane. [env]
+39. **LED colour alone is not a power-state diagnosis — but its init gate still matters.**
+    A live device can show a transient commissioning colour while Z2M shows
+    `interviewCompleted:true`, `first_boot:OFF` and an advancing `wake_count`.
+    v0.1.10 also had a C evaluation-order bug: `led_init() == ESP_OK && first_boot`
+    invoked `led_init()` on every timer wake. v0.1.11 fixes it to
+    `first_boot && led_init() == ESP_OK`; check live Z2M evidence before reset.
+    [env]
