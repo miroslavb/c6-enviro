@@ -194,3 +194,11 @@ Below: the ones that shaped this firmware, plus everything new.
     scheduler-bounded `AWAKE_WINDOW_S` cold-boot/BOOT interval, then explicitly
     restores false before normal reporting. Hardware acceptance still requires
     `interviewCompleted:true` and `epList:[1,2,3,4,5]`. [env]
+41. **A ZCL write timeout must exceed the sleepy device's current cadence.**
+    Live 2026-07-26 Enviro continued to announce and report every 10 s with
+    `presentValue:10`, but Z2M's default 10 s `genAnalogOutput.write` timed out
+    at the poll boundary. This is a host-side wait-budget race, not a dead device
+    or `NOT_AUTHORIZED`. The converter now derives a 30–120 s timeout from the
+    current persisted interval and applies it to both interval writes and gas
+    commands; high-cadence changes can be forced with a bounded RESET/BOOT window.
+    [env]

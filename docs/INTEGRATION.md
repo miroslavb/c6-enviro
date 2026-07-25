@@ -105,9 +105,11 @@ just open permit-join and wait, or tap RESET.
 - The device is a **sleepy end device**: it needs a parent (coordinator or any
   router) in range. `ed_timeout` is 64 min — if the device misses check-ins that
   long, the parent forgets it and the next wake triggers a rejoin.
-- Config writes from HA land on the next wake (the device polls its parent every
-  cycle) — at a 3 s interval that's effectively instant; at 1 h it takes up to 1 h
-  (or press BOOT to wake it now).
+- Config writes from HA are queued at the device's parent. The converter uses a
+  cadence-aware ZCL timeout: **at least 30 s**, current interval + 10 s when larger,
+  capped at **120 s**. This avoids Herdsman's default 10 s race at a 10 s sensor
+  cadence. At intervals above the cap, press RESET (or short-press BOOT while awake)
+  to reopen the bounded RX window before saving a setting.
 
 ## 5. Home Assistant
 

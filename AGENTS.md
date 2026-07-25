@@ -2,6 +2,7 @@
 
 - Control-plane invariant (v0.1.12): never put writable settings on a manufacturer-specific custom cluster. `report_interval_s` uses EP1 `genAnalogOutput.presentValue`; `gas_enabled` uses EP1 `genOnOff` commands. Keep both at EP1 so acceptance remains `epList:[1,2,3,4,5]`; Z2M numeric controls can arrive as a scalar or `{value:N}`.
 - Z2M deployment invariant: `biometal_enviro.mjs` imports only `enviro-contract.generated.mjs`, `enviro-defs.mjs`, and `enviro-defs.factory.mjs`. Never overwrite generic `lib/contract.generated.mjs` / `defs.mjs` in the shared external_converters directory.
+- Sleepy-control timeout invariant: pass the cadence-aware `timeout` options returned by `sleepyControlWriteOptions(meta)` to **both** standard `ep.write` and `ep.command`. Herdsman's 10 s default races a sensor whose current interval is 10 s; use a 30 s minimum, current-interval + 10 s when larger, and a 120 s cap. At intervals above that cap, tell the user to RESET/BOOT into the bounded RX window rather than reporting a false device failure.
 - LED colour is a bounded commissioning diagnostic, not a power-state oracle. Before treating it as a failure, check live Z2M `interviewCompleted`, `first_boot`, `status_flags`, and advancing `wake_count`.
 - Timer-wake LED invariant: write `if (first_boot && led_init() == ESP_OK)`, never reverse the operands. C evaluates `&&` left-to-right; the old order initialized RMT/WS2812 on every deep-sleep wake despite the intended gate.
 

@@ -7,7 +7,9 @@
 //
 // v0.1.11 retires the custom 0xFC00 control plane: ESP-Zigbee compat responds
 // NOT_AUTHORIZED to custom READ_WRITE attributes. `report_interval_s` now writes
-// genAnalogOutput.presentValue; `gas_enabled` uses genOnOff on/off commands.
+// genAnalogOutput.presentValue; `gas_enabled` uses genOnOff on/off commands. Both
+// use a cadence-aware response timeout because a sleepy cycle can equal Z2M's
+// former 10 s default.
 import {
   identify,
   temperature,
@@ -130,6 +132,27 @@ function boundedNumber(value, control) {
   return Math.round(number);
 }
 
+// A sleepy device cannot promise a ZCL response inside Herdsman's 10 s default:
+// a request can arrive immediately after its parent poll, while the next wake is
+// exactly one report interval away. Size the wait from the *current* persisted
+// cadence, never from the value being written (which may be 3600 s).
+const CONTROL_WRITE_MIN_TIMEOUT_MS = 30_000;
+const CONTROL_WRITE_MAX_TIMEOUT_MS = 120_000;
+const CONTROL_WRITE_MARGIN_MS = 10_000;
+
+function sleepyControlWriteOptions(meta) {
+  const currentInterval = Number(meta?.state?.report_interval_s);
+  const intervalMs = Number.isFinite(currentInterval) && currentInterval >= 3
+    ? Math.round(currentInterval * 1000)
+    : 0;
+  return {
+    timeout: Math.min(
+      CONTROL_WRITE_MAX_TIMEOUT_MS,
+      Math.max(CONTROL_WRITE_MIN_TIMEOUT_MS, intervalMs + CONTROL_WRITE_MARGIN_MS),
+    ),
+  };
+}
+
 function buildControlsExtend(controls) {
   const exposesList = controls.map((control) => {
     if (control.kind === "binary") {
@@ -164,13 +187,14 @@ function buildControlsExtend(controls) {
     key: [control.name],
     convertSet: async (entity, key, value, meta) => {
       const ep = getEndpoint(entity, meta, control.ep, key);
+      const options = sleepyControlWriteOptions(meta);
       if (control.transport === "command") {
         const enabled = normalizeOnOff(value, key);
-        await ep.command(control.cluster, enabled ? control.onCommand : control.offCommand, {});
+        await ep.command(control.cluster, enabled ? control.onCommand : control.offCommand, {}, options);
         return {state: {[key]: enabled ? "ON" : "OFF"}};
       }
       const interval = boundedNumber(value, control);
-      await ep.write(control.cluster, {[control.attribute]: interval});
+      await ep.write(control.cluster, {[control.attribute]: interval}, options);
       return {state: {[key]: interval}};
     },
     convertGet: async (entity, key, meta) => {

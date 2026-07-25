@@ -64,11 +64,11 @@ test("converter routes interval writes and gas commands through standard ZCL", a
 
   const calls = [];
   const endpoint = {
-    async write(cluster, payload) {
-      calls.push({kind: "write", cluster, payload});
+    async write(cluster, payload, options) {
+      calls.push({kind: "write", cluster, payload, options});
     },
-    async command(cluster, command, payload) {
-      calls.push({kind: "command", cluster, command, payload});
+    async command(cluster, command, payload, options) {
+      calls.push({kind: "command", cluster, command, payload, options});
     },
     async read(cluster, attributes) {
       calls.push({kind: "read", cluster, attributes});
@@ -91,17 +91,18 @@ test("converter routes interval writes and gas commands through standard ZCL", a
   assert.ok(gas, "gas toZigbee converter missing");
 
   assert.deepEqual(
-    await interval.convertSet(entity, "report_interval_s", 90, {}),
+    await interval.convertSet(entity, "report_interval_s", 90, {state: {report_interval_s: 10}}),
     {state: {report_interval_s: 90}},
   );
   assert.deepEqual(calls.shift(), {
     kind: "write",
     cluster: "genAnalogOutput",
     payload: {presentValue: 90},
+    options: {timeout: 30000},
   });
 
   assert.deepEqual(
-    await gas.convertSet(entity, "gas_enabled", "OFF", {}),
+    await gas.convertSet(entity, "gas_enabled", "OFF", {state: {report_interval_s: 10}}),
     {state: {gas_enabled: "OFF"}},
   );
   assert.deepEqual(calls.shift(), {
@@ -109,7 +110,33 @@ test("converter routes interval writes and gas commands through standard ZCL", a
     cluster: "genOnOff",
     command: "off",
     payload: {},
+    options: {timeout: 30000},
   });
+});
+
+test("converter gives sleepy control writes a cadence-aware response budget", async () => {
+  const mod = await import("../biometal_enviro.mjs");
+  const calls = [];
+  const entity = {
+    getDevice() {
+      return {
+        getEndpoint() {
+          return {
+            async write(cluster, payload, options) {
+              calls.push({cluster, payload, options});
+            },
+          };
+        },
+      };
+    },
+  };
+  const interval = mod.controlsExtend.toZigbee.find((tz) => tz.key.includes("report_interval_s"));
+  await interval.convertSet(entity, "report_interval_s", 61, {state: {report_interval_s: 60}});
+  await interval.convertSet(entity, "report_interval_s", 3600, {state: {report_interval_s: 3600}});
+  assert.deepEqual(calls, [
+    {cluster: "genAnalogOutput", payload: {presentValue: 61}, options: {timeout: 70000}},
+    {cluster: "genAnalogOutput", payload: {presentValue: 3600}, options: {timeout: 120000}},
+  ]);
 });
 
 test("converter clamps report_interval_s before the radio write", async () => {
