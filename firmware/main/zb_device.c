@@ -62,6 +62,12 @@ static const char *TAG = "zb_device";
 #define INTERVIEW_QUIET_MS           60000u
 #define INTERVIEW_POLL_MS            200u
 #define NORMAL_CONTROL_POLL_WINDOW_MS 1000u
+// ZBOSS accepts min_interval=1 s for these reporting slots, but a normal timer
+// wake used to update the attributes immediately after registration. That first
+// change remained below the minimum interval and the MCU slept before a second
+// update; only the long cold-boot window ever produced EP1 reports. Let the
+// reporting engine cross the minimum interval before releasing main's first push.
+#define REPORTING_SETTLE_MS          1200u
 
 // v0.1.9 recovery identity. The browser flash erased the device's Zigbee NVRAM,
 // but the coordinator retained the old EUI's trust-center link key. Use a unique
@@ -390,6 +396,12 @@ static void setup_self_reporting(void)
     ESP_LOGI(TAG, "device-side reporting configured (%u slots)", (unsigned)REPORT_SLOT_COUNT);
 }
 
+static void reporting_ready_cb(uint8_t param)
+{
+    (void)param;
+    emit(ZB_EVT_REPORTING_READY);
+}
+
 static void setup_self_reporting_cb(uint8_t param)
 {
     (void)param;
@@ -397,7 +409,7 @@ static void setup_self_reporting_cb(uint8_t param)
     // parent-poll interval before device-side bind/report traffic begins.
     ezb_nwk_set_keepalive_interval(ED_KEEP_ALIVE_MS);
     setup_self_reporting();
-    emit(ZB_EVT_REPORTING_READY);
+    esp_zb_scheduler_alarm(reporting_ready_cb, 0, REPORTING_SETTLE_MS);
 }
 
 static void schedule_self_reporting(bool quiet)
@@ -406,6 +418,7 @@ static void schedule_self_reporting(bool quiet)
     // At most one delayed setup may survive. A quick leave/rejoin must start a
     // fresh quiet phase instead of inheriting the old join's nearly-expired alarm.
     esp_zb_scheduler_alarm_cancel(setup_self_reporting_cb, 0);
+    esp_zb_scheduler_alarm_cancel(reporting_ready_cb, 0);
     if (quiet) {
         // Stay a sleepy child and fetch the parent's indirect ZDO frames often.
         // This avoids the v0.1.7 parent/local rx_on_when_idle mismatch without
@@ -740,6 +753,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             ESP_LOGW(TAG, "left the network — restarting steering");
             s_joined = false;
             esp_zb_scheduler_alarm_cancel(setup_self_reporting_cb, 0);
+            esp_zb_scheduler_alarm_cancel(reporting_ready_cb, 0);
             schedule_steering_retry(1000);
             emit(ZB_EVT_LEFT);
         } else {

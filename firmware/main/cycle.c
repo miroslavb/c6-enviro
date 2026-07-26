@@ -66,6 +66,30 @@ uint32_t cycle_sleep_ms(uint16_t interval_s, uint32_t awake_ms, uint32_t min_sle
     return sleep_ms;
 }
 
+// ---- Network/reporting lifecycle ------------------------------------------
+
+cycle_report_action_t cycle_report_action(bool ready, bool left)
+{
+    if (left) return CYCLE_REPORT_REJOIN;
+    if (ready) return CYCLE_REPORT_READY;
+    return CYCLE_REPORT_TIMEOUT;
+}
+
+bool cycle_join_opens_awake_window(bool first_join, bool cold_boot)
+{
+    return first_join || cold_boot;
+}
+
+bool cycle_join_wait_expired(int64_t now_us,
+                             int64_t started_us,
+                             uint32_t timeout_s,
+                             int64_t awake_until_us)
+{
+    int64_t deadline_us = started_us + (int64_t)timeout_s * 1000000;
+    if (awake_until_us > deadline_us) deadline_us = awake_until_us;
+    return now_us >= deadline_us;
+}
+
 // ---- Status flags -----------------------------------------------------------
 
 uint16_t cycle_status_flags(const cycle_status_t *st,

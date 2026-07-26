@@ -71,6 +71,51 @@ static void test_sleep_ms(void)
     CHECK(cycle_sleep_ms(3, 0, 500) == 3000, "0 awake -> full period");
 }
 
+static void test_reporting_wait_action(void)
+{
+    CHECK(cycle_report_action(false, false) == CYCLE_REPORT_TIMEOUT,
+          "no READY/LEFT event -> timeout");
+    CHECK(cycle_report_action(true, false) == CYCLE_REPORT_READY,
+          "READY alone -> push");
+    CHECK(cycle_report_action(false, true) == CYCLE_REPORT_REJOIN,
+          "LEFT during reporting settle -> rejoin");
+    CHECK(cycle_report_action(true, true) == CYCLE_REPORT_REJOIN,
+          "LEFT wins over simultaneous stale READY");
+}
+
+static void test_join_awake_window(void)
+{
+    CHECK(cycle_join_opens_awake_window(true, false),
+          "fresh steering join after a timer wake reopens commissioning window");
+    CHECK(cycle_join_opens_awake_window(true, true),
+          "fresh steering join on cold boot opens commissioning window");
+    CHECK(cycle_join_opens_awake_window(false, true),
+          "cold-boot NVRAM restore reopens commissioning window");
+    CHECK(!cycle_join_opens_awake_window(false, false),
+          "normal timer NVRAM restore remains a short battery wake");
+}
+
+static void test_join_wait_deadline(void)
+{
+    const int64_t start = 1000000;
+    const int64_t commissioning_end = start + 300000000;
+
+    CHECK(!cycle_join_wait_expired(start + 59000000, start, 60, 0),
+          "normal join remains awake inside its 60 s budget");
+    CHECK(cycle_join_wait_expired(start + 60000000, start, 60, 0),
+          "normal failed join expires at 60 s");
+    CHECK(!cycle_join_wait_expired(start + 299000000, start, 60,
+                                   commissioning_end),
+          "active commissioning window may outlive the join timeout");
+    CHECK(cycle_join_wait_expired(commissioning_end, start, 60,
+                                  commissioning_end),
+          "failed rejoin expires when the longer commissioning window ends");
+    CHECK(!cycle_join_wait_expired(start + 59000000, start, 60, start - 1),
+          "stale awake timestamp cannot shorten a new join budget");
+    CHECK(cycle_join_wait_expired(start + 60000000, start, 60, start - 1),
+          "stale nonzero awake timestamp cannot disable the battery timeout");
+}
+
 static void test_status_flags(void)
 {
     // Bit numbers mirror the generated contract (contract.json statusBits).
@@ -96,6 +141,9 @@ int main(void)
     test_battery_zcl();
     test_clamp_interval();
     test_sleep_ms();
+    test_reporting_wait_action();
+    test_join_awake_window();
+    test_join_wait_deadline();
     test_status_flags();
 
     printf("%s: %d passed, %d failed\n", g_fail ? "FAIL" : "OK", g_pass, g_fail);

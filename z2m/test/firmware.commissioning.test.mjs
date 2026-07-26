@@ -130,6 +130,36 @@ test("bounded fast parent polling serves the quiet interview phase", () => {
     "quiet phase does not accelerate sleepy parent polling");
 });
 
+test("first measurement push waits until the reporting minimum interval has elapsed", () => {
+  assert.match(zbSource, /#define\s+REPORTING_SETTLE_MS\s+(?:100[1-9]|10[1-9]\d|1[1-9]\d{2}|[2-9]\d{3,})u?/,
+    "reporting setup needs a post-registration settle longer than its one-second minimum interval");
+
+  const ready = functionBody(
+    zbSource,
+    "static void reporting_ready_cb(uint8_t param)",
+    "static void setup_self_reporting_cb(uint8_t param)",
+  );
+  assert.match(ready, /emit\s*\(\s*ZB_EVT_REPORTING_READY\s*\)/,
+    "the delayed callback must release main's first measurement push");
+
+  const setup = functionBody(
+    zbSource,
+    "static void setup_self_reporting_cb(uint8_t param)",
+    "static void schedule_self_reporting(bool quiet)",
+  );
+  const configure = setup.indexOf("setup_self_reporting();");
+  const delayedReady = setup.indexOf(
+    "esp_zb_scheduler_alarm(reporting_ready_cb, 0, REPORTING_SETTLE_MS);",
+  );
+  assert.notEqual(configure, -1, "device-side reporting setup is missing");
+  assert.notEqual(delayedReady, -1,
+    "normal wakes still push attributes immediately after registering reporting slots");
+  assert.ok(configure < delayedReady,
+    "reporting slots must be registered before the post-setup settle begins");
+  assert.doesNotMatch(setup, /emit\s*\(\s*ZB_EVT_REPORTING_READY\s*\)/,
+    "REPORTING_READY must not be emitted synchronously inside reporting setup");
+});
+
 test("normal timer wakes reserve a bounded fast-poll slot for queued controls", () => {
   assert.match(zbSource, /#define\s+NORMAL_CONTROL_POLL_WINDOW_MS\s+1000u?/,
     "normal deep-sleep wakes need a one-second control receive budget");
@@ -185,11 +215,14 @@ test("stale reporting alarms cannot escape across leave/rejoin", () => {
     "static void schedule_self_reporting(bool quiet)",
     "// ===========================================================================\n// Measurement push",
   );
-  const cancel = schedule.indexOf("esp_zb_scheduler_alarm_cancel(setup_self_reporting_cb, 0);");
+  const cancelSetup = schedule.indexOf("esp_zb_scheduler_alarm_cancel(setup_self_reporting_cb, 0);");
+  const cancelReady = schedule.indexOf("esp_zb_scheduler_alarm_cancel(reporting_ready_cb, 0);");
   const alarm = schedule.indexOf("esp_zb_scheduler_alarm(setup_self_reporting_cb, 0, delay_ms);");
-  assert.notEqual(cancel, -1, "new reporting schedule does not cancel the prior alarm");
+  assert.notEqual(cancelSetup, -1, "new reporting schedule does not cancel the prior setup alarm");
+  assert.notEqual(cancelReady, -1, "new reporting schedule does not cancel the prior delayed-ready alarm");
   assert.notEqual(alarm, -1, "reporting alarm schedule not found");
-  assert.ok(cancel < alarm, "prior reporting alarm must be cancelled before replacement");
+  assert.ok(cancelSetup < alarm && cancelReady < alarm,
+    "all prior reporting alarms must be cancelled before replacement");
 
   const leave = functionBody(
     zbSource,
@@ -197,13 +230,15 @@ test("stale reporting alarms cannot escape across leave/rejoin", () => {
     "default:",
   );
   assert.match(leave, /esp_zb_scheduler_alarm_cancel\s*\(\s*setup_self_reporting_cb\s*,\s*0\s*\)/,
-    "LEAVE does not invalidate the delayed reporting callback");
+    "LEAVE does not invalidate the delayed reporting-setup callback");
+  assert.match(leave, /esp_zb_scheduler_alarm_cancel\s*\(\s*reporting_ready_cb\s*,\s*0\s*\)/,
+    "LEAVE does not invalidate the delayed reporting-ready callback");
 });
 
 test("LEFT wins over REPORTING_READY when both event bits are present", () => {
   const wait = functionBody(
     mainSource,
-    "static bool wait_for_reporting_ready(void)",
+    "static cycle_report_action_t wait_for_reporting_ready(void)",
     "void app_main(void)",
   );
   const left = wait.indexOf("if (bits & EVT_LEFT)");
@@ -211,6 +246,61 @@ test("LEFT wins over REPORTING_READY when both event bits are present", () => {
   assert.notEqual(left, -1, "reporting wait does not handle LEFT explicitly");
   assert.notEqual(ready, -1, "reporting wait does not handle READY");
   assert.ok(left < ready, "LEFT must take priority over a stale READY bit");
+});
+
+test("LEAVE while reporting settles re-enters join flow instead of sleeping", () => {
+  const recover = functionBody(
+    mainSource,
+    "static bool wait_for_network_and_reporting(bool cold_boot)",
+    "void app_main(void)",
+  );
+  assert.match(recover, /for\s*\(\s*;\s*;\s*\)/,
+    "network/reporting recovery is not retryable");
+  assert.match(recover, /case\s+CYCLE_REPORT_REJOIN\s*:\s*continue\s*;/,
+    "LEFT during reporting setup still exits toward deep sleep instead of rejoining");
+  assert.doesNotMatch(recover, /go_to_sleep\s*\(/,
+    "the recovery helper must return timeout to its caller, not sleep on LEFT");
+
+  const app = mainSource.slice(mainSource.indexOf("void app_main(void)"));
+  assert.match(app, /wait_for_network_and_reporting\s*\(\s*first_boot\s*\)/,
+    "initial startup does not use the retryable network/reporting lifecycle");
+});
+
+test("mid-cycle fresh rejoin reopens the five-minute commissioning window", () => {
+  const waitNetwork = functionBody(
+    mainSource,
+    "static bool wait_for_network(bool cold_boot)",
+    "static bool wait_for_network_and_reporting(bool cold_boot)",
+  );
+  assert.match(waitNetwork,
+    /cycle_join_opens_awake_window\s*\(\s*\(bits\s*&\s*EVT_FIRST_JOIN\)\s*!=\s*0\s*,\s*cold_boot\s*\)/,
+    "join handling does not classify a fresh rejoin independently of original boot cause");
+  assert.match(waitNetwork, /s_awake_until_us\s*=/,
+    "the classified commissioning join does not arm the MCU awake window");
+
+  const app = mainSource.slice(mainSource.indexOf("void app_main(void)"));
+  const leftStart = app.indexOf("if (bits & EVT_LEFT)");
+  const afterLeft = app.indexOf("const uint32_t awake_ms", leftStart);
+  assert.ok(leftStart >= 0 && afterLeft > leftStart, "mid-cycle LEFT branch not found");
+  const leftBranch = app.slice(leftStart, afterLeft);
+  assert.match(leftBranch, /wait_for_network_and_reporting\s*\(\s*false\s*\)/,
+    "mid-cycle leave bypasses the shared rejoin/window/reporting lifecycle");
+  assert.doesNotMatch(leftBranch,
+    /xEventGroupWaitBits\s*\(\s*s_events\s*,\s*EVT_JOINED\s*\|\s*EVT_FIRST_JOIN/,
+    "mid-cycle leave still duplicates join handling without rearming the window");
+});
+
+test("failed rejoin cannot outlive both join and commissioning deadlines", () => {
+  const waitNetwork = functionBody(
+    mainSource,
+    "static bool wait_for_network(bool cold_boot)",
+    "static bool wait_for_network_and_reporting(bool cold_boot)",
+  );
+  assert.match(waitNetwork,
+    /cycle_join_wait_expired\s*\(\s*esp_timer_get_time\s*\(\s*\)\s*,\s*t_start\s*,\s*CONFIG_ENVIRO_JOIN_TIMEOUT_S\s*,\s*s_awake_until_us\s*\)/,
+    "join wait does not apply a bounded deadline that includes the active commissioning window");
+  assert.doesNotMatch(waitNetwork, /s_awake_until_us\s*==\s*0/,
+    "a stale nonzero awake timestamp still disables the failed-rejoin timeout");
 });
 
 test("main passes cold-boot context and waits for reporting readiness before first push", () => {

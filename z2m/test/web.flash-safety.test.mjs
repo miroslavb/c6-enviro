@@ -29,10 +29,10 @@ test("routine flash preserves zb_storage by default", () => {
     "runtime guidance still recommends destructive erase by default");
   assert.doesNotMatch(html, /erase-first\s+(?:checked|on)\b/i,
     "HTML help still recommends destructive erase during routine recovery");
-  assert.match(html, /src=["']js\/app\.js\?v=0\.1\.14["']/,
-    "installer entry module is not cache-busted for v0.1.14");
-  assert.match(app, /from\s+["']\.\/flash\.js\?v=0\.1\.14["']/,
-    "flash safety module is not cache-busted for v0.1.14");
+  assert.match(html, /src=["']js\/app\.js\?v=0\.1\.15["']/,
+    "installer entry module is not cache-busted for v0.1.15");
+  assert.match(app, /from\s+["']\.\/flash\.js\?v=0\.1\.15["']/,
+    "flash safety module is not cache-busted for v0.1.15");
 });
 
 test("explicit recovery erase remains available", () => {
@@ -41,12 +41,12 @@ test("explicit recovery erase remains available", () => {
   assert.match(flash, /confirm\(['"]Erase the entire flash\?/);
 });
 
-test("published firmware artifact matches the v0.1.14 release identity", () => {
-  assert.match(versionHeader, /#define\s+FW_VERSION\s+"0\.1\.14"/);
-  assert.equal(manifest.version, "0.1.14");
+test("published firmware artifact matches the v0.1.15 release identity", () => {
+  assert.match(versionHeader, /#define\s+FW_VERSION\s+"0\.1\.15"/);
+  assert.equal(manifest.version, "0.1.15");
   assert.equal(manifest.chipFamily, "ESP32-C6");
   assert.equal(manifest.parts.length, 3);
-  assert.notEqual(firmwareBinary.indexOf(Buffer.from("0.1.14")), -1,
+  assert.notEqual(firmwareBinary.indexOf(Buffer.from("0.1.15")), -1,
     "committed application binary does not contain the release FW_VERSION");
 });
 

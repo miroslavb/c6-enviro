@@ -42,7 +42,7 @@ homeassistant: true
 Restart Z2M.
 
 The converter's configure phase binds EP1 `genPollCtrl` to the coordinator endpoint.
-For an already-paired Enviro upgraded to v0.1.14, press RESET after flashing and run
+For an already-paired Enviro upgraded to v0.1.14 or newer, press RESET after flashing and run
 **Reconfigure** once during the bounded awake window before testing controls; a new
 pair performs this configure step automatically.
 
@@ -51,9 +51,9 @@ pair performs this configure step automatically.
 1. Z2M → **Permit join (all)**.
 2. Power or reset the board. Factory-new firmware steers immediately; the LED goes
    blue (steering) → green (joined).
-   For v0.1.14 the expected IEEE is **`0x8efd49fffe1a3d8c`**.
+   For v0.1.15 the expected IEEE is **`0x8efd49fffe1a3d8c`**.
 3. **Leave it alone for the next few minutes**: after the first join the device stays
-   awake **5 minutes** and v0.1.14 temporarily enables continuous RX only for that
+   awake **5 minutes** and v0.1.15 temporarily enables continuous RX only for that
    bounded window. The first **60 seconds are intentionally quiet** (no
    telemetry/reporting) while it also polls its parent every 200 ms so Z2M can finish
    ZDO discovery. RX is explicitly switched off before reporting; normal timer wakes
@@ -88,6 +88,22 @@ flash first** merely to reopen interview mode. Do not repeatedly force-remove/re
 a half-interviewed entry: that creates overlapping interview attempts and
 network-address churn. Acceptance is the Z2M database showing `interviewCompleted:true`,
 `interviewState:"SUCCESSFUL"`, and `epList:[1,2,3,4,5]`.
+
+### v0.1.15 normal-wake environmental reporting
+
+Device-side reporting slots use a one-second minimum interval. v0.1.14 configured
+those slots and immediately pushed T/RH/P; a normal timer wake then slept before a
+second push, while the five-minute awake window appeared healthy because later cycles
+crossed the minimum interval. v0.1.15 waits 1.2 seconds after registration before the
+first measurement push. Hardware acceptance must observe changed T/RH/P on multiple
+`first_boot=OFF` timer wakes after the five-minute window, not merely during cold boot.
+
+If the device leaves while quiet/reporting setup is pending, v0.1.15 keeps the MCU awake
+and follows the already-scheduled steering retry rather than sleeping. A successful
+fresh rejoin from the running cycle reopens the complete five-minute commissioning
+window before telemetry resumes; a normal timer-wake NVRAM restore remains short. If
+steering never succeeds, the device sleeps after the later of the active commissioning
+deadline and its fresh 60-second join budget, rather than scanning indefinitely.
 
 ### v0.1.14 standard controls + Poll Control queue
 
@@ -144,12 +160,12 @@ into your `packages/` and adjust entity ids to your friendly name.
   short-lived `#capture=…` link: the capability remains in the browser fragment, is removed
   from the address bar immediately, and serial chunks append server-side with `archive: active`.
 - A healthy cycle logs:
-  `C6-ENVIRO v0.1.14 starting (wake #N, deep-sleep wake)` →
+  `C6-ENVIRO v0.1.15 starting (wake #N, deep-sleep wake)` →
   `vbat: …` → `BME680@0x76: T=…` → `network restored from NVRAM` →
   `deep sleep 2… ms`.
 - `factory-new → network steering` in every cycle = the join never succeeded:
   check permit-join / channel / coordinator range.
-- v0.1.14 additionally logs `Zigbee EUI-64 override: 0x8efd49fffe1a3d8c`,
+- v0.1.15 additionally logs `Zigbee EUI-64 override: 0x8efd49fffe1a3d8c`,
   `steering: parent poll every 200 ms`, `normal wake: Poll Control CheckIn tsn=…`,
   `normal wake: 1000 ms control receive phase`, and on a cold boot/BOOT press
   `interview window: continuous Zigbee RX for 300 s`.
