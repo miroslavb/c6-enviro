@@ -54,7 +54,7 @@ export class SerialCapture {
   }
 
   async _post(text) {
-    const response = await this.fetchFn(this.endpoint, {
+    const response = await this.fetchFn.call(globalThis, this.endpoint, {
       method: "POST",
       mode: "cors",
       cache: "no-store",
