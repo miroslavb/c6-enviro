@@ -13,7 +13,18 @@ test("converter loads and exposes the enviro entities", async () => {
 
   assert.deepEqual(def.zigbeeModel, ["C6-ENVIRO"]);
   assert.equal(def.vendor, "Biometal");
-  assert.equal(mod.CONTRACT.version, 3);
+  assert.equal(mod.CONTRACT.version, 4);
+  assert.deepEqual(mod.CONTRACT.pollControl, {
+    ep: 1,
+    cluster: "genPollCtrl",
+    clusterId: 0x0020,
+    coordinatorShortAddress: 0x0000,
+    coordinatorEndpoint: 1,
+    checkInIntervalQs: 40,
+    longPollIntervalQs: 4,
+    shortPollIntervalQs: 1,
+    fastPollTimeoutQs: 8,
+  });
   assert.ok(Array.isArray(def.extend) && def.extend.length > 6, "modernExtend list present");
 
   const names = new Set();

@@ -2,7 +2,7 @@
 // Regenerate with: node contract/codegen.mjs
 #pragma once
 
-#define ZB_CONTRACT_VERSION 3
+#define ZB_CONTRACT_VERSION 4
 
 // ---- Device identity (Basic cluster 0x0000) ----
 #define ZB_MANUF_NAME   "Biometal"
@@ -31,6 +31,16 @@
 #define CTRL_GAS_ENABLED_EP           1
 #define CTRL_GAS_ENABLED_CLUSTER_ID   0x0006
 #define CTRL_GAS_ENABLED_ATTR_ID      0x0000
+
+// ---- Standard EP1 Poll Control synchronization ----
+#define POLL_CONTROL_EP                     1
+#define POLL_CONTROL_CLUSTER_ID             0x0020
+#define POLL_CONTROL_COORDINATOR_SHORT_ADDR 0x0000
+#define POLL_CONTROL_COORDINATOR_EP         1
+#define POLL_CONTROL_CHECKIN_INTERVAL_QS    40
+#define POLL_CONTROL_LONG_POLL_INTERVAL_QS  4
+#define POLL_CONTROL_SHORT_POLL_INTERVAL_QS 1
+#define POLL_CONTROL_FAST_POLL_TIMEOUT_QS   8
 
 // ---- Sensor + power status bitmask (statusFlags domain field) ----
 #define ST_BIT_SENSOR_ERROR   0      // BME680 not detected or measurement failed this cycle

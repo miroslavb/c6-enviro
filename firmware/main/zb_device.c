@@ -21,8 +21,8 @@
 // New for the sleepy end device:
 //   * role = ESP_ZB_DEVICE_TYPE_ED with rx_on_when_idle = false by default;
 //     only a 5-minute cold-boot/BOOT interview window enables continuous RX.
-//     Normal reporting uses a 1 s keep_alive after a bounded 1 s / 200 ms
-//     parent-poll control receive slot; ed_timeout 64 min.
+//     Normal reporting uses a 1 s keep_alive after standard Poll Control CheckIn
+//     and a bounded 1 s / 200 ms control receive slot; ed_timeout 64 min.
 //   * After deep sleep the stack restores the network from zb_storage NVRAM —
 //     the DEVICE_REBOOT signal arrives with the network up, no steering.
 //   * The wake cycle is sequenced by events back to main.c, which owns the
@@ -233,6 +233,22 @@ static esp_zb_ep_list_t *build_endpoint(void)
         build_report_interval_output(), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
     esp_zb_cluster_list_add_on_off_cluster(clusters,
         build_gas_enabled_on_off(), ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+
+    // Standard sleepy-device handshake. The 10 s automatic CheckIn cadence serves
+    // controls queued during the bounded five-minute cold-boot/BOOT awake window;
+    // each ordinary restored-network timer wake also sends one explicit CheckIn.
+    // When Herdsman has a queued control it answers startFastPolling=true, flushes
+    // that queue, then sends FastPollStop. This survives parent changes across the
+    // full deep-sleep reboot where an unsynchronised indirect write does not.
+    esp_zb_poll_control_cluster_cfg_t poll_cfg = {
+        .check_in_interval   = POLL_CONTROL_CHECKIN_INTERVAL_QS,
+        .long_poll_interval  = POLL_CONTROL_LONG_POLL_INTERVAL_QS,
+        .short_poll_interval = POLL_CONTROL_SHORT_POLL_INTERVAL_QS,
+        .fast_poll_timeout   = POLL_CONTROL_FAST_POLL_TIMEOUT_QS,
+    };
+    esp_zb_cluster_list_add_poll_control_cluster(clusters,
+        esp_zb_poll_control_cluster_create(&poll_cfg),
+        ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
 
     esp_zb_endpoint_config_t ep_cfg = {
         .endpoint           = HA_ENDPOINT,
@@ -524,6 +540,23 @@ void zb_device_enable_interview_rx(void)
     esp_zb_scheduler_alarm(enable_interview_rx_cb, 0, 1);
 }
 
+static void send_poll_control_checkin(void)
+{
+    // Address the coordinator directly instead of relying on a binding restored
+    // across deep-sleep reboots. Sending CheckIn starts the standard Poll Control
+    // exchange; the stack fast-polls when Herdsman accepts pending work.
+    esp_zb_zcl_poll_control_check_in_cmd_req_t req = {
+        .zcl_basic_cmd = {
+            .dst_addr_u.addr_short = POLL_CONTROL_COORDINATOR_SHORT_ADDR,
+            .dst_endpoint = POLL_CONTROL_COORDINATOR_EP,
+            .src_endpoint = POLL_CONTROL_EP,
+        },
+        .address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT,
+    };
+    const uint8_t tsn = esp_zb_zcl_poll_control_check_in_cmd_req(&req);
+    ESP_LOGI(TAG, "normal wake: Poll Control CheckIn tsn=%u", (unsigned)tsn);
+}
+
 // ===========================================================================
 // SET_ATTR write router (HA config writes)
 // ===========================================================================
@@ -656,6 +689,9 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
                 s_joined = true;
                 if (s_commissioning_boot) {
                     zb_device_enable_interview_rx();
+                }
+                if (!s_commissioning_boot) {
+                    send_poll_control_checkin();
                 }
                 schedule_self_reporting(s_commissioning_boot);
                 emit(ZB_EVT_JOINED);

@@ -194,21 +194,21 @@ Below: the ones that shaped this firmware, plus everything new.
     scheduler-bounded `AWAKE_WINDOW_S` cold-boot/BOOT interval, then explicitly
     restores false before normal reporting. Hardware acceptance still requires
     `interviewCompleted:true` and `epList:[1,2,3,4,5]`. [env]
-41. **A ZCL write timeout must exceed the sleepy device's current cadence.**
+41. **A larger ZCL timeout is necessary but not sufficient for a rebooting sleepy device.**
     Live 2026-07-26 Enviro continued to announce and report every 10 s with
     `presentValue:10`, but Z2M's default 10 s `genAnalogOutput.write` timed out
-    at the poll boundary. This is a host-side wait-budget race, not a dead device
-    or `NOT_AUTHORIZED`. The converter derives a 30–120 s timeout from the current
-    persisted interval and applies it to both interval writes and gas commands;
-    however, v0.1.13 additionally fixes the firmware receive phase below. [env]
+    at the poll boundary. The converter therefore derives a 30–120 s lifetime from
+    the current persisted interval. Live retries with a 30 s timeout still failed,
+    proving that wait budget alone cannot synchronize an indirect write with a child
+    that may reattach through another parent after deep sleep. [env]
 42. **Outbound telemetry does not prove a normal deep-sleep wake can receive ZCL.**
     Live 2026-07-25/26 Enviro sent `device_announce` + telemetry every 10 s while
     standard `read` and `write` requests still timed out after 10 and 30 s across
-    multiple wakes. `schedule_self_reporting(false)` had restored 1000 ms polling
-    and started outbound reporting almost immediately, so main reached deep sleep
-    before a distinct indirect-control receive opportunity. v0.1.13 reserves a
-    1000 ms fast (200 ms) parent-poll slot before telemetry, then restores 1000 ms;
-    it does not enable permanent RX. [env]
+    multiple wakes. v0.1.13 reserved a 1000 ms fast (200 ms) parent-poll slot before
+    telemetry, but live v0.1.13 still timed out: debug showed successful uplink reports,
+    no read/write response, coordinator relation 255, and different source-route relays
+    on adjacent wakes. A receive slot cannot fetch a frame buffered at yesterday's
+    parent. It does not justify permanent RX. [env]
 43. **Browser-only serial logs are not durable observability.**
     A Web Serial console reads a device physically attached to the operator's browser,
     so no server can see those lines unless the browser explicitly relays them. The
@@ -220,3 +220,10 @@ Below: the ones that shaped this firmware, plus everything new.
     A newly deployed `serial_capture.mjs` inherited `0600` from a root-side write;
     Caddy returned 403 locally and through the edge. Enforce dirs 0755/files 0644 on
     the static deploy target and verify the real public module URL. [env]
+45. **Poll Control is the synchronization primitive for queued sleepy-device control.**
+    v0.1.14 adds a standard EP1 `genPollCtrl` server. Normal timer wakes explicitly
+    CheckIn; the bounded cold-boot/BOOT window checks in every 10 s. The converter sets
+    a non-zero Herdsman `pendingRequestTimeout` and uses `sendPolicy:"bulk"` for both
+    control set/get, so `Device.onZclData` can answer CheckIn, flush pending work during
+    fast polling, and send FastPollStop. This preserves deep sleep, five endpoints, and
+    `rx_on_when_idle=false` without trusting an unstable parent-side indirect queue. [env]

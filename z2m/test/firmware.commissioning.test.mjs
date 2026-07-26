@@ -149,6 +149,36 @@ test("normal timer wakes reserve a bounded fast-poll slot for queued controls", 
     "normal control slot must not turn the solar ZED into an always-on receiver");
 });
 
+test("normal timer wakes check in through standard Poll Control before reporting", () => {
+  assert.match(zbSource, /esp_zb_cluster_list_add_poll_control_cluster\s*\(/,
+    "EP1 must expose a standard Poll Control server for coordinated sleepy downlinks");
+  assert.match(zbSource, /\.check_in_interval\s*=\s*POLL_CONTROL_CHECKIN_INTERVAL_QS\b/,
+    "the five-minute cold-boot window needs periodic CheckIn for controls queued after startup");
+
+  const checkin = functionBody(
+    zbSource,
+    "static void send_poll_control_checkin(void)",
+    "// ===========================================================================\n// SET_ATTR write router",
+  );
+  assert.match(checkin, /esp_zb_zcl_poll_control_check_in_cmd_req\s*\(/,
+    "the normal wake path never asks Zigbee2MQTT to flush pending requests");
+  assert.match(checkin, /dst_addr_u\.addr_short\s*=\s*POLL_CONTROL_COORDINATOR_SHORT_ADDR/,
+    "Poll Control CheckIn must target the coordinator directly");
+
+  const signals = functionBody(
+    zbSource,
+    "void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)",
+    "// ===========================================================================\n// Stack task",
+  );
+  const normalBranch = signals.indexOf("if (!s_commissioning_boot)");
+  const checkinCall = signals.indexOf("send_poll_control_checkin();", normalBranch);
+  const reportingCall = signals.indexOf("schedule_self_reporting(s_commissioning_boot);", normalBranch);
+  assert.notEqual(normalBranch, -1, "restored-network signal has no normal-wake branch");
+  assert.notEqual(checkinCall, -1, "normal timer wake does not emit Poll Control CheckIn");
+  assert.ok(checkinCall < reportingCall,
+    "CheckIn must open the queued-control window before reporting begins");
+});
+
 test("stale reporting alarms cannot escape across leave/rejoin", () => {
   const schedule = functionBody(
     zbSource,

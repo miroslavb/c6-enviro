@@ -50,6 +50,9 @@ function controlAttr(control) {
 }
 
 for (const control of contract.standardControls) controlAttr(control);
+if (!contract.pollControl || contract.pollControl.ep !== 1 || contract.pollControl.clusterId !== 0x0020) {
+  throw new Error("pollControl must define the standard EP1 genPollCtrl (0x0020) transport");
+}
 
 function genHeader() {
   const L = [];
@@ -83,6 +86,16 @@ function genHeader() {
     L.push(`#define CTRL_${u}_CLUSTER_ID   ${hex(c.clusterId)}`);
     L.push(`#define CTRL_${u}_ATTR_ID      ${hex(c.attributeId)}`);
   }
+  L.push("");
+  L.push("// ---- Standard EP1 Poll Control synchronization ----");
+  L.push(`#define POLL_CONTROL_EP                     ${contract.pollControl.ep}`);
+  L.push(`#define POLL_CONTROL_CLUSTER_ID             ${hex(contract.pollControl.clusterId)}`);
+  L.push(`#define POLL_CONTROL_COORDINATOR_SHORT_ADDR ${hex(contract.pollControl.coordinatorShortAddress)}`);
+  L.push(`#define POLL_CONTROL_COORDINATOR_EP         ${contract.pollControl.coordinatorEndpoint}`);
+  L.push(`#define POLL_CONTROL_CHECKIN_INTERVAL_QS    ${contract.pollControl.checkInIntervalQs}`);
+  L.push(`#define POLL_CONTROL_LONG_POLL_INTERVAL_QS  ${contract.pollControl.longPollIntervalQs}`);
+  L.push(`#define POLL_CONTROL_SHORT_POLL_INTERVAL_QS ${contract.pollControl.shortPollIntervalQs}`);
+  L.push(`#define POLL_CONTROL_FAST_POLL_TIMEOUT_QS   ${contract.pollControl.fastPollTimeoutQs}`);
   L.push("");
   L.push("// ---- Sensor + power status bitmask (statusFlags domain field) ----");
   for (const s of contract.statusBits) {
@@ -137,6 +150,7 @@ function genJs() {
     device: contract.device,
     attributes: attrs,
     standardControls: contract.standardControls,
+    pollControl: contract.pollControl,
     analogEndpoints: contract.analogEndpoints,
     standardClusters: contract.standardClusters,
     statusBits,
@@ -183,7 +197,16 @@ function genDoc() {
     if (a.min !== undefined || a.max !== undefined) L.push(`| ↳ range | — | — | — | ${a.min ?? ""}…${a.max ?? ""} ${a.unit ?? ""} | firmware + converter clamp | — |`);
   }
   L.push("");
-  L.push("The two control clusters share EP1 with the measurement clusters; EP2…EP5 remain the four Analog Input telemetry endpoints, preserving the sleepy-device interview surface `EP1…EP5`.");
+  L.push("The two configuration clusters share EP1 with the measurement clusters; EP2…EP5 remain the four Analog Input telemetry endpoints, preserving the sleepy-device interview surface `EP1…EP5`.");
+  L.push("");
+  L.push("## Standard sleepy-control synchronization (EP1)");
+  L.push("");
+  L.push(`- Cluster: \`${contract.pollControl.cluster}\` ${hex(contract.pollControl.clusterId)} (server)`);
+  L.push("- Converter configure binds this server cluster to the coordinator endpoint so automatic CheckIn commands have a destination.");
+  L.push(`- CheckIn destination: coordinator short ${hex(contract.pollControl.coordinatorShortAddress)}, EP${contract.pollControl.coordinatorEndpoint}`);
+  L.push(`- Automatic awake-window CheckIn: ${contract.pollControl.checkInIntervalQs} quarter-seconds (${contract.pollControl.checkInIntervalQs / 4} s)`);
+  L.push(`- Long/short poll: ${contract.pollControl.longPollIntervalQs}/${contract.pollControl.shortPollIntervalQs} quarter-seconds; fast-poll timeout: ${contract.pollControl.fastPollTimeoutQs} quarter-seconds`);
+  L.push("- Normal deep-sleep timer wakes additionally send one explicit CheckIn before reporting so Herdsman can flush its pending control queue.");
   L.push("");
   L.push("## Analog Input endpoints (standard `genAnalogInput` 0x000C)");
   L.push("");

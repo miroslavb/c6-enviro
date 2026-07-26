@@ -41,18 +41,24 @@ homeassistant: true
 
 Restart Z2M.
 
+The converter's configure phase binds EP1 `genPollCtrl` to the coordinator endpoint.
+For an already-paired Enviro upgraded to v0.1.14, press RESET after flashing and run
+**Reconfigure** once during the bounded awake window before testing controls; a new
+pair performs this configure step automatically.
+
 ## 3. Pair (sleepy-device rules)
 
 1. Z2M → **Permit join (all)**.
 2. Power or reset the board. Factory-new firmware steers immediately; the LED goes
    blue (steering) → green (joined).
-   For v0.1.13 the expected IEEE is **`0x8efd49fffe1a3d8c`**.
+   For v0.1.14 the expected IEEE is **`0x8efd49fffe1a3d8c`**.
 3. **Leave it alone for the next few minutes**: after the first join the device stays
-   awake **5 minutes** and v0.1.13 temporarily enables continuous RX only for that
+   awake **5 minutes** and v0.1.14 temporarily enables continuous RX only for that
    bounded window. The first **60 seconds are intentionally quiet** (no
    telemetry/reporting) while it also polls its parent every 200 ms so Z2M can finish
    ZDO discovery. RX is explicitly switched off before reporting; normal timer wakes
-   stay sleepy but reserve a 1 s 200 ms-poll control receive slot before telemetry.
+   stay sleepy, send Poll Control CheckIn, and reserve a 1 s 200 ms-poll receive slot
+   for queued controls before telemetry.
    If the interview stalls, press **BOOT** briefly to reopen the same bounded window
    and hit "Reconfigure" in Z2M.
 4. Result: device `C6-ENVIRO` / `Biometal`, type **EndDevice**, entities for
@@ -67,27 +73,30 @@ endpoints; v0.1.6/v0.1.7 then tested continuous RX, but v0.1.7 still failed live
 despite strong uplink telemetry. v0.1.8 also exposed a separate factory-new security
 failure after a full-flash erase: Z2M saw transient joins, but device-side BDB never
 reached `STEERING=ESP_OK` because the coordinator retained the old EUI/link-key state.
-Flash **v0.1.13 or newer**, pair IEEE `0x8efd49fffe1a3d8c`, keep Permit join open until
+Flash **v0.1.14 or newer**, pair IEEE `0x8efd49fffe1a3d8c`, keep Permit join open until
 the serial console prints `JOINED`, and then let the interview continue. v0.1.10
 exposes `[1,2,3,4,5]`, keeps `rx_on_when_idle=false` by default, and starts 200 ms
 parent polling before factory-new BDB steering so the trust-center key can reach the
 sleepy child. v0.1.12 additionally keeps RX on only for the 5-minute cold-boot/BOOT
 window because live 2026-07-25 re-interviews still received announces but timed out
-on Active Endpoints after the 60 s sleepy-only phase. v0.1.13 adds a one-second,
-200 ms parent-poll control slot before every normal-wake telemetry burst, so queued
-standard ZCL commands can be processed before deep sleep. Do not enable **Erase whole
+on Active Endpoints after the 60 s sleepy-only phase. v0.1.13 added a one-second,
+200 ms parent-poll slot, but live 2026-07-26 reads/writes still timed out while
+successive wake routes used different relays. v0.1.14 adds standard Poll Control:
+the device checks in, Herdsman flushes its pending queue in fast-poll mode, and then
+stops fast polling. Do not enable **Erase whole
 flash first** merely to reopen interview mode. Do not repeatedly force-remove/rejoin
 a half-interviewed entry: that creates overlapping interview attempts and
 network-address churn. Acceptance is the Z2M database showing `interviewCompleted:true`,
 `interviewState:"SUCCESSFUL"`, and `epList:[1,2,3,4,5]`.
 
-### v0.1.13 standard controls + sleepy downlink window
+### v0.1.14 standard controls + Poll Control queue
 
 ESP-Zigbee compat rejects writable manufacturer-specific attributes with
 `NOT_AUTHORIZED`, even when the attribute list uses `READ_WRITE`. v0.1.12
 therefore retained the successful five endpoint descriptors but added two **standard
-clusters on EP1**; v0.1.13 keeps them and gives each normal deep-sleep wake a short
-parent-polled control receive phase before reporting:
+clusters on EP1**. v0.1.14 adds a third standard EP1 server, `genPollCtrl`, without
+changing `epList:[1,2,3,4,5]`. Every normal deep-sleep wake sends CheckIn before its
+short parent-polled control receive phase:
 
 - `report_interval_s` → `genAnalogOutput.presentValue`, rounded and clamped to
   **3…3600 seconds** by converter and firmware;
@@ -107,12 +116,14 @@ just open permit-join and wait, or tap RESET.
 - The device is a **sleepy end device**: it needs a parent (coordinator or any
   router) in range. `ed_timeout` is 64 min — if the device misses check-ins that
   long, the parent forgets it and the next wake triggers a rejoin.
-- Config writes from HA are queued at the device's parent. v0.1.13 first gives
-  every normal wake a **1 s** control receive phase at **200 ms** parent polls;
-  only then does it restore the 1 s poll interval and emit telemetry. The converter
-  also uses a cadence-aware ZCL timeout: **at least 30 s**, current interval + 10 s
-  when larger, capped at **120 s**. At intervals above the cap, press RESET (or
-  short-press BOOT while awake) to reopen the bounded RX window before saving a setting.
+- The converter places interactive control set/get operations into Herdsman's pending
+  queue (`sendPolicy:"bulk"`) instead of sending immediately to a parent that may
+  change across deep-sleep reboots. Every normal wake sends `genPollCtrl.checkin`;
+  the five-minute cold-boot/BOOT window also checks in every **10 s**. Herdsman answers
+  `checkinRsp(startFastPolling=true)` only when work exists, flushes the queue, then
+  sends `fastPollStop`. The request lifetime remains cadence-aware: **at least 30 s**,
+  current interval + 10 s when larger, capped at **120 s**. At intervals above the cap,
+  press RESET/BOOT and submit the change during the bounded awake window.
 
 ## 5. Home Assistant
 
@@ -128,17 +139,18 @@ into your `packages/` and adjust entity ids to your friendly name.
   short-lived `#capture=…` link: the capability remains in the browser fragment, is removed
   from the address bar immediately, and serial chunks append server-side with `archive: active`.
 - A healthy cycle logs:
-  `C6-ENVIRO v0.1.13 starting (wake #N, deep-sleep wake)` →
+  `C6-ENVIRO v0.1.14 starting (wake #N, deep-sleep wake)` →
   `vbat: …` → `BME680@0x76: T=…` → `network restored from NVRAM` →
   `deep sleep 2… ms`.
 - `factory-new → network steering` in every cycle = the join never succeeded:
   check permit-join / channel / coordinator range.
-- v0.1.13 additionally logs `Zigbee EUI-64 override: 0x8efd49fffe1a3d8c`,
-  `steering: parent poll every 200 ms`, `normal wake: 1000 ms control receive phase`,
-  and on a cold boot/BOOT press `interview window: continuous Zigbee RX for 300 s`.
+- v0.1.14 additionally logs `Zigbee EUI-64 override: 0x8efd49fffe1a3d8c`,
+  `steering: parent poll every 200 ms`, `normal wake: Poll Control CheckIn tsn=…`,
+  `normal wake: 1000 ms control receive phase`, and on a cold boot/BOOT press
+  `interview window: continuous Zigbee RX for 300 s`.
   Acceptance requires that same IEEE in Z2M and the subsequent `interviewCompleted:true` state.
 - A white/red commissioning LED alone is not a failure verdict: confirm Z2M is still
   advancing `wake_count` and that `first_boot`/`status_flags` are healthy first.
-  v0.1.13 also gates WS2812/RMT initialization behind `first_boot`, so timer wakes
+  v0.1.14 also gates WS2812/RMT initialization behind `first_boot`, so timer wakes
   never initialize the RGB driver.
 - Re-pair from scratch: hold **BOOT ≥3 s** (factory reset) with permit-join open.

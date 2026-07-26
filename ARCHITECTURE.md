@@ -10,7 +10,7 @@ inherited unchanged; what's new is the sleepy-end-device lifecycle.
 |---|---|---|---|
 | `/root/c6-lcd-zigbee` | Mains-powered Zigbee **Router** | ESP32-C6, ESP-IDF 5.4, esp-zigbee-lib 2.x, endpoint registration, NVS restore, `esp_zb_start(false)`, +20 dBm TX | Router capability keeps RX on by design. |
 | `/root/c6-radiometer` | Mains-powered Zigbee **Router** | Same stack; channel 11 primary; +20 dBm TX was the proven fix for asymmetric ZDO replies | No deep sleep or parent polling. |
-| `/root/c6-enviro` | Solar/Li-ion sleepy **End Device** | Same stack startup, NVS and +20 dBm TX; same five-endpoint interview budget as the successful v0.1.0 | `rx_on_when_idle=false` + 1 s polling normally; v0.1.13 reserves a 1 s 200 ms parent-poll control slot before normal reporting, and permits continuous RX only for the bounded 5-minute cold-boot/BOOT interview window. |
+| `/root/c6-enviro` | Solar/Li-ion sleepy **End Device** | Same stack startup, NVS and +20 dBm TX; same five-endpoint interview budget as the successful v0.1.0 | `rx_on_when_idle=false` + 1 s polling normally; v0.1.14 sends Poll Control CheckIn and reserves a 1 s 200 ms parent-poll slot before normal reporting, while continuous RX remains limited to the bounded 5-minute cold-boot/BOOT interview window. |
 
 The controls rule out a generic ESP32-C6, endpoint-registration, or low-TX-power
 failure. They do **not** justify copying router power semantics into Enviro. The
@@ -27,11 +27,11 @@ boundary: transient coordinator-side joins are not equivalent to device-side BDB
 | Sleep model | **Pure timer-wake deep sleep** (no light sleep, no `CONFIG_PM`) | Simplest reliable model at multi-second intervals; the user asked for deep sleep. ZBOSS restores the network from `zb_storage` NVRAM on every wake — no re-steering, just a parent re-attach. |
 | Cadence | `report_interval_s`, default **3 s**, writable 3…3600 from HA, NVS-persisted | The spec. Interval-compensated: sleep = period − time awake. |
 | UP telemetry | **STANDARD clusters only** (T 0x0402 / RH 0x0405 / P 0x0403 / PowerConfig 0x0001 on EP1; genAnalogInput EP2–EP5 for gas Ω, vbat mV, status bits, wake counter) | The Z2M addon cannot decode incoming custom-cluster frames (proven live 2026-07-11 on the radiometer). |
-| DOWN config | **Standard EP1 controls:** `genAnalogOutput` (0x000D) `presentValue` for `report_interval_s`; `genOnOff` (0x0006) commands for `gas_enabled` | ESP-Zigbee compat NACKs custom `READ_WRITE` attributes with `NOT_AUTHORIZED`; both standard controls retain the five-endpoint interview budget and persist to NVS. |
+| DOWN config | **Standard EP1 controls:** `genAnalogOutput` (0x000D) `presentValue` for `report_interval_s`; `genOnOff` (0x0006) commands for `gas_enabled`; `genPollCtrl` (0x0020) server for explicit CheckIn | ESP-Zigbee compat NACKs custom `READ_WRITE` attributes with `NOT_AUTHORIZED`. Deep-sleep reboot may change parent, so v0.1.14 queues controls in Herdsman and flushes them only after device-initiated CheckIn; the endpoint count remains five. |
 | Reporting transport | **Stack reporting engine** (self-binding + `esp_zb_zcl_update_reporting_info`, device min=1 s / delta=0), enabled only after commissioning's 60 s quiet phase | The only transmit path that emitted frames on this hardware+lib. v0.1.0 interviewed while these slots were rejected; once min=1 made them work, simultaneous self-bind/report traffic correlated with the active-endpoint regression. Z2M coordinator-side reporting requests remain min=0. |
 | Sensor | Vendored **Bosch BME68x API v4.4.8** (BSD-3), integer mode, forced T/P/H+gas per wake | Official compensation math; forced mode = one conversion per wake; gas trusted only with `GASM_VALID`+`HEAT_STAB`. |
 | Battery sense | ADC1 (GPIO2) + 2×200 kΩ divider, curve-fitting calibration, 8-sample average | PowerConfig gives % (0.5 % units — Z2M divides by 2) and 100 mV voltage; precise mV rides AI EP3. `batteryVoltage` is NOT stack-reportable (esp-zigbee #463) — reading only. |
-| Commissioning + controls | **200 ms sleepy parent polls begin before BDB steering** and continue through the first **60 s quiet ZDO phase** after `JOINED`; v0.1.12 enables RX only for the enclosing **5-minute cold-boot/BOOT window**, then schedules it off. v0.1.13 adds a separate **1 s / 200 ms normal-wake control receive slot before reporting**; five endpoints EP1..EP5 | Live 2026-07-25 re-interviews still received announces but timed out on Active Endpoints after the 60 s polling phase. The bounded RX window keeps ZDO replies immediate only during commissioning; the normal receive slot gives parent-buffered ZCL controls a chance without permanent RX. |
+| Commissioning + controls | **200 ms sleepy parent polls begin before BDB steering** and continue through the first **60 s quiet ZDO phase** after `JOINED`; v0.1.12 enables RX only for the enclosing **5-minute cold-boot/BOOT window**, then schedules it off. v0.1.14 adds EP1 Poll Control CheckIn plus the separate **1 s / 200 ms normal-wake receive slot**; five endpoints EP1..EP5 | Live 2026-07-26 showed v0.1.13 telemetry while 10/30 s reads and writes still timed out and consecutive wake routes used different relays. Device-initiated CheckIn gives Herdsman a confirmed window to flush its own pending queue without permanent RX. |
 | Join battery guard | 60 s steering budget → sleep 60 s → retry | An unjoined, scanning radio burns ~80 mA and would flatten the cell overnight. |
 
 ## Wake-cycle sequence
@@ -40,7 +40,7 @@ boundary: transient coordinator-side joins are not equivalent to device-side BDB
 RTC timer ──► boot (skip-validate) ──► NVS config ──► measure BME680 + ADC   (~0.3 s)
    ──► esp_zb_start(false) ──► DEVICE_REBOOT (NVRAM restore)                (~0.5–1.5 s)
    ──► [cold boot / BOOT: 5 min bounded RX; first 60 s quiet ZDO phase, 200 ms parent polls]
-   ──► [normal timer wake: 1 s control receive slot, 200 ms parent polls]
+   ──► [normal timer wake: genPollCtrl CheckIn → 1 s receive slot, 200 ms polls]
    ──► configure self-bind/report slots ──► push attrs ──► stack reports
    ──► flush window (2 s, Kconfig) ──► deep sleep (period − awake, floor 0.5 s)
 ```
@@ -48,16 +48,17 @@ RTC timer ──► boot (skip-validate) ──► NVS config ──► measure 
 - Measurement happens **before** the radio comes up — data is ready when the network is.
 - `wake_count` (AI EP5) changes every cycle → guaranteed ≥1 report per wake → HA
   `last_seen` tracks the cadence even in a perfectly static room.
-- Normal timer wakes reserve a 1 s, 200 ms-poll control receive phase before
-  reporting. This fetches parent-buffered standard-cluster HA writes without
-  permanent RX; afterward `keep_alive` returns to 1 s for reporting and sleep.
+- Normal timer wakes first send standard Poll Control CheckIn to coordinator EP1.
+  Herdsman answers only when pending work exists, flushes queued standard controls
+  in fast-poll mode, then sends FastPollStop. The existing 1 s, 200 ms receive phase
+  bounds this exchange; afterward `keep_alive` returns to 1 s for reporting/sleep.
 - Factory-new boot instead steers (permit-join must be open), then holds the
   5-minute MCU-awake **and bounded continuous-RX** window. It emits no self-bind or
   attribute-report traffic for the first 60 s and polls its parent every 200 ms so
   buffered active-endpoint/descriptor requests arrive promptly. The RX window and
   normal 1000 ms poll interval is restored before reporting. Every timer wake
-  first reserves a 1 s 200 ms-poll control receive slot, then configures reporting
-  and remains otherwise sleepy.
+  first emits CheckIn and reserves a 1 s 200 ms-poll receive slot, then configures
+  reporting and remains otherwise sleepy.
 
 ## Event flow (who owns what)
 

@@ -23,7 +23,16 @@
 | ↳ range | — | — | — | 3…3600 s | firmware + converter clamp | — |
 | `gas_enabled` | `gasEnabled` | genOnOff | 0x0006 | `on` / `off` | command | NVS |
 
-The two control clusters share EP1 with the measurement clusters; EP2…EP5 remain the four Analog Input telemetry endpoints, preserving the sleepy-device interview surface `EP1…EP5`.
+The two configuration clusters share EP1 with the measurement clusters; EP2…EP5 remain the four Analog Input telemetry endpoints, preserving the sleepy-device interview surface `EP1…EP5`.
+
+## Standard sleepy-control synchronization (EP1)
+
+- Cluster: `genPollCtrl` 0x0020 (server)
+- Converter configure binds this server cluster to the coordinator endpoint so automatic CheckIn commands have a destination.
+- CheckIn destination: coordinator short 0x0000, EP1
+- Automatic awake-window CheckIn: 40 quarter-seconds (10 s)
+- Long/short poll: 4/1 quarter-seconds; fast-poll timeout: 8 quarter-seconds
+- Normal deep-sleep timer wakes additionally send one explicit CheckIn before reporting so Herdsman can flush its pending control queue.
 
 ## Analog Input endpoints (standard `genAnalogInput` 0x000C)
 

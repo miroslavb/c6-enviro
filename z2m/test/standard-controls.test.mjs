@@ -98,7 +98,7 @@ test("converter routes interval writes and gas commands through standard ZCL", a
     kind: "write",
     cluster: "genAnalogOutput",
     payload: {presentValue: 90},
-    options: {timeout: 30000},
+    options: {timeout: 30000, sendPolicy: "bulk"},
   });
 
   assert.deepEqual(
@@ -110,7 +110,7 @@ test("converter routes interval writes and gas commands through standard ZCL", a
     cluster: "genOnOff",
     command: "off",
     payload: {},
-    options: {timeout: 30000},
+    options: {timeout: 30000, sendPolicy: "bulk"},
   });
 });
 
@@ -134,8 +134,8 @@ test("converter gives sleepy control writes a cadence-aware response budget", as
   await interval.convertSet(entity, "report_interval_s", 61, {state: {report_interval_s: 60}});
   await interval.convertSet(entity, "report_interval_s", 3600, {state: {report_interval_s: 3600}});
   assert.deepEqual(calls, [
-    {cluster: "genAnalogOutput", payload: {presentValue: 61}, options: {timeout: 70000}},
-    {cluster: "genAnalogOutput", payload: {presentValue: 3600}, options: {timeout: 120000}},
+    {cluster: "genAnalogOutput", payload: {presentValue: 61}, options: {timeout: 70000, sendPolicy: "bulk"}},
+    {cluster: "genAnalogOutput", payload: {presentValue: 3600}, options: {timeout: 120000, sendPolicy: "bulk"}},
   ]);
 });
 
@@ -186,24 +186,95 @@ test("converter accepts Zigbee2MQTT's object-shaped number payload", async () =>
   assert.deepEqual(calls, [{cluster: "genAnalogOutput", payload: {presentValue: 120}}]);
 });
 
-test("converter reads both persisted standard controls during configuration", async () => {
+test("converter binds Poll Control and reads persisted controls during configuration", async () => {
   const mod = await import("../biometal_enviro.mjs");
   const reads = [];
+  const binds = [];
+  const coordinatorEndpoint = {ID: 1, deviceIeeeAddress: "0x0000000000000000"};
+  const endpoint = {
+    async bind(cluster, target) {
+      binds.push({cluster, target});
+    },
+    async read(cluster, attributes) {
+      reads.push({cluster, attributes});
+    },
+  };
   const device = {
     getEndpoint(id) {
       assert.equal(id, 1);
-      return {
-        async read(cluster, attributes) {
-          reads.push({cluster, attributes});
-        },
-      };
+      return endpoint;
     },
   };
   assert.ok(Array.isArray(mod.controlsExtend.configure),
-    "standard control extension must request persisted state after interview");
-  await mod.controlsExtend.configure[0](device, {});
+    "standard control extension must configure the sleepy control path after interview");
+  await mod.controlsExtend.configure[0](device, coordinatorEndpoint);
+  assert.deepEqual(binds, [{cluster: "genPollCtrl", target: coordinatorEndpoint}],
+    "automatic CheckIn needs an EP1 Poll Control binding to the coordinator");
   assert.deepEqual(reads, [
     {cluster: "genAnalogOutput", attributes: ["presentValue"]},
     {cluster: "genOnOff", attributes: ["onOff"]},
+  ]);
+});
+
+test("converter queues control set and get until the device Poll Control CheckIn", async () => {
+  const mod = await import("../biometal_enviro.mjs");
+  const calls = [];
+  const device = {
+    pendingRequestTimeout: 0,
+    getEndpoint() {
+      return endpoint;
+    },
+  };
+  const endpoint = {
+    getDevice() {
+      return device;
+    },
+    async write(cluster, payload, options) {
+      calls.push({kind: "write", cluster, payload, options});
+    },
+    async read(cluster, attributes, options) {
+      calls.push({kind: "read", cluster, attributes, options});
+    },
+    async command(cluster, command, payload, options) {
+      calls.push({kind: "command", cluster, command, payload, options});
+    },
+  };
+  const entity = {getDevice: () => device};
+  const interval = mod.controlsExtend.toZigbee.find((tz) => tz.key.includes("report_interval_s"));
+  const gas = mod.controlsExtend.toZigbee.find((tz) => tz.key.includes("gas_enabled"));
+
+  await interval.convertSet(entity, "report_interval_s", 30, {state: {report_interval_s: 10}});
+  await interval.convertGet(entity, "report_interval_s", {state: {report_interval_s: 10}});
+  await gas.convertSet(entity, "gas_enabled", "OFF", {state: {report_interval_s: 10}});
+  await gas.convertGet(entity, "gas_enabled", {state: {report_interval_s: 10}});
+
+  assert.equal(device.pendingRequestTimeout, 30000,
+    "Herdsman needs a non-zero request lifetime before sendPolicy can queue");
+  assert.deepEqual(calls, [
+    {
+      kind: "write",
+      cluster: "genAnalogOutput",
+      payload: {presentValue: 30},
+      options: {timeout: 30000, sendPolicy: "bulk"},
+    },
+    {
+      kind: "read",
+      cluster: "genAnalogOutput",
+      attributes: ["presentValue"],
+      options: {timeout: 30000, sendPolicy: "bulk"},
+    },
+    {
+      kind: "command",
+      cluster: "genOnOff",
+      command: "off",
+      payload: {},
+      options: {timeout: 30000, sendPolicy: "bulk"},
+    },
+    {
+      kind: "read",
+      cluster: "genOnOff",
+      attributes: ["onOff"],
+      options: {timeout: 30000, sendPolicy: "bulk"},
+    },
   ]);
 });

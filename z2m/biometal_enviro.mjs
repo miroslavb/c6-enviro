@@ -8,8 +8,8 @@
 // v0.1.11 retires the custom 0xFC00 control plane: ESP-Zigbee compat responds
 // NOT_AUTHORIZED to custom READ_WRITE attributes. `report_interval_s` now writes
 // genAnalogOutput.presentValue; `gas_enabled` uses genOnOff on/off commands. Both
-// use a cadence-aware response timeout because a sleepy cycle can equal Z2M's
-// former 10 s default.
+// use Poll Control CheckIn + Herdsman's pending-request queue because a full
+// deep-sleep reboot can restore through a different parent router.
 import {
   identify,
   temperature,
@@ -153,6 +153,16 @@ function sleepyControlWriteOptions(meta) {
   };
 }
 
+function sleepyControlQueueOptions(entity, meta) {
+  const options = sleepyControlWriteOptions(meta);
+  const device = entity.getDevice ? entity.getDevice() : meta?.device;
+  if (!device) throw new Error("sleepy control target has no device");
+  // Herdsman only queues when pendingRequestTimeout is non-zero. `bulk` skips the
+  // doomed immediate attempt; Device.onZclData flushes it after genPollCtrl.checkin.
+  device.pendingRequestTimeout = options.timeout;
+  return {...options, sendPolicy: "bulk"};
+}
+
 function buildControlsExtend(controls) {
   const exposesList = controls.map((control) => {
     if (control.kind === "binary") {
@@ -187,7 +197,7 @@ function buildControlsExtend(controls) {
     key: [control.name],
     convertSet: async (entity, key, value, meta) => {
       const ep = getEndpoint(entity, meta, control.ep, key);
-      const options = sleepyControlWriteOptions(meta);
+      const options = sleepyControlQueueOptions(entity, meta);
       if (control.transport === "command") {
         const enabled = normalizeOnOff(value, key);
         await ep.command(control.cluster, enabled ? control.onCommand : control.offCommand, {}, options);
@@ -198,11 +208,25 @@ function buildControlsExtend(controls) {
       return {state: {[key]: interval}};
     },
     convertGet: async (entity, key, meta) => {
-      await getEndpoint(entity, meta, control.ep, key).read(control.cluster, [control.attribute]);
+      const options = sleepyControlQueueOptions(entity, meta);
+      await getEndpoint(entity, meta, control.ep, key).read(
+        control.cluster,
+        [control.attribute],
+        options,
+      );
     },
   }));
 
-  const configure = [async (device) => {
+  const configure = [async (device, coordinatorEndpoint) => {
+    // The Poll Control server's automatic CheckIn has no destination until EP1
+    // is bound to the coordinator's Poll Control client. Normal timer wakes also
+    // send an explicit direct CheckIn, but this binding is required for controls
+    // queued later during the bounded cold-boot/BOOT awake window.
+    const pollEndpoint = device.getEndpoint(CONTRACT.pollControl.ep);
+    if (!pollEndpoint) throw new Error("Poll Control endpoint is missing");
+    if (!coordinatorEndpoint) throw new Error("Poll Control coordinator endpoint is missing");
+    await pollEndpoint.bind(CONTRACT.pollControl.cluster, coordinatorEndpoint);
+
     // Populate HA/Z2M state from NVS-backed standard attributes immediately
     // after the sleepy device's long interview window opens. This is a read,
     // not a write: it never resets either persisted control.

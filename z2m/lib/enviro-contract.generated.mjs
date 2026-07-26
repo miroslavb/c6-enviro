@@ -13,7 +13,7 @@ export const Zcl_DataType = {
 };
 
 export const CONTRACT = {
-  "version": 3,
+  "version": 4,
   "device": {
     "manufacturerName": "Biometal",
     "modelId": "C6-ENVIRO",
@@ -153,6 +153,17 @@ export const CONTRACT = {
       "offCommand": "off"
     }
   ],
+  "pollControl": {
+    "ep": 1,
+    "cluster": "genPollCtrl",
+    "clusterId": 32,
+    "coordinatorShortAddress": 0,
+    "coordinatorEndpoint": 1,
+    "checkInIntervalQs": 40,
+    "longPollIntervalQs": 4,
+    "shortPollIntervalQs": 1,
+    "fastPollTimeoutQs": 8
+  },
   "analogEndpoints": [
     {
       "ep": 2,
