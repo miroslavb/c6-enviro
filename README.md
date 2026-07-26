@@ -12,6 +12,12 @@ during the v0.1.8 field test destroyed `zb_storage`, while the coordinator retai
 the old EUI's trust-center key. The new local-admin identity isolates this one sensor
 without modifying coordinator NVRAM or any sibling device.
 
+**Hardware acceptance passed 2026-07-26:** after a routine no-erase update and return
+to battery power, Z2M bound EP1 Poll Control and delivered queued normal-sleep
+SET/GET for `report_interval_s=30`. Direct readback and later `first_boot=OFF`
+telemetry retained 30 across increasing wake counts. See `docs/LESSONS.md` items
+45–52 for the evidence and operational caveats.
+
 ```
  ☀ solar ─► Waveshare Solar     ┌──────────── ESP32-C6 Super Mini ────────────┐
             Power Manager ─► 🔋─┤ 5V/VIN   deep sleep ⇆ wake every 3 s        │

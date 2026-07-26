@@ -159,3 +159,23 @@ into your `packages/` and adjust entity ids to your friendly name.
   v0.1.14 also gates WS2812/RMT initialization behind `first_boot`, so timer wakes
   never initialize the RGB driver.
 - Re-pair from scratch: hold **BOOT ≥3 s** (factory reset) with permit-join open.
+
+### Z2M does not reach `started!` after a coordinator restart
+
+1. Do not restart merely because frontend health is still `starting/unhealthy`.
+   First confirm whether coordinator-version output and valid UNPI/SRSP/AF frames are
+   advancing; on the current large zStack network this can precede frontend health by
+   minutes.
+2. If the Supervisor watchdog is terminating that progress, temporarily POST only
+   `{"watchdog":false}` to the local Supervisor `/addons/<slug>/options` endpoint with
+   the existing SSH add-on token. Never print the full `/info` response because it
+   includes secrets. Restore watchdog `true` after `healthy` + `Zigbee2MQTT started!`.
+3. If startup is stuck on sequential Enviro EP1–EP5 metadata reads, start monitoring
+   first and tap Enviro RESET once. Its bounded five-minute RX window lets the reads
+   finish; this is not erase, remove, factory reset or re-interview.
+4. Restore both on-disk and runtime log level to `info`. For Z2M 2.12, runtime update is
+   `zigbee2mqtt/bridge/request/options`; prove it by observing zero new debug lines.
+
+For control acceptance, prefer a fresh device-originated ZCL read response and later
+telemetry/state over lagging `database.db` attributes. A stale DB value is not a reason
+to repeat a proven write or mutate the DB manually.

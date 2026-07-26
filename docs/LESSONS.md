@@ -237,3 +237,41 @@ Below: the ones that shaped this firmware, plus everything new.
     CheckIns used `startFastPolling=0` and the device followed the 30 s cadence, proving
     it was not stuck fast-polling. Preserve this as a visible caveat, but do not
     misclassify a successful write/read as failed solely from that tolerant cleanup log. [env]
+47. **Valid ZNP traffic outranks an early unhealthy frontend probe.**
+    After a verified 65 s coordinator power-off (`devnum` 8→9), the add-on still
+    reported `starting/unhealthy` while debug logs already contained valid UNPI frames,
+    coordinator-version output, SRSP status 0, AF confirmations and incoming Zigbee
+    traffic. Restarting on health alone repeatedly discarded real recovery progress.
+    Wait for the coordinator marker and observe whether ZNP frames advance before
+    deciding the adapter is still dead. [env]
+48. **Temporarily disable the Supervisor watchdog through its current local API, then restore it.**
+    The historical `ha supervisor options --watchdog=...` CLI flag is gone. The working
+    path is authenticated GET/POST against `/addons/<slug>/info` and `/options` using
+    the SSH add-on's existing `SUPERVISOR_TOKEN`, changing only `{"watchdog":false}`.
+    Restore `true` only after Docker is healthy and `Zigbee2MQTT started!` is present.
+    Never print a full add-on `info/options` payload: it contains MQTT credentials and
+    Zigbee network material; emit only explicitly allowlisted booleans/status fields. [env]
+49. **One sleepy endpoint can serialize an otherwise live Z2M startup.**
+    With ZNP already passing traffic, Z2M spent successive 10 s waits reading standard
+    Analog Input/Output metadata (`description`, `applicationType`, units, min/max,
+    resolution) from Enviro EP1–EP5; repeated announces added more work and delayed
+    frontend health. One monitored, non-erasing RESET of Enviro opened its bounded RX
+    window, the reads completed, and Z2M became healthy without another coordinator
+    restart. [env]
+50. **A USB bridge ID is not a radio-chip identification.**
+    CH340 `1a86:7523` proved only the UART bridge. A user-approved, read-only
+    `cc2538-bsl --bootloader-sonoff-usb -r -l 4` probe received no ROM ACK and changed
+    no flash/NVRAM; therefore the adapter must not be called a Sonoff/CC2652 solely from
+    that USB ID. Record the physical model or a proven firmware inventory before any
+    future bootloader operation. [env]
+51. **Use live evidence precedence when Z2M persistence lags.**
+    After the successful v0.1.14 write/read, `state.json`, direct
+    `genAnalogOutput.readResponse {presentValue:30}` and later battery telemetry all
+    showed interval 30, while `database.db` still held `presentValue:10` and stale
+    `swBuildId=0.1.10`. Acceptance precedence is direct ZCL response → subsequent
+    device telemetry → runtime state; database snapshots are supporting evidence only
+    unless freshly synchronized. [env]
+52. **Changing the config file does not prove the running logger changed level.**
+    For Z2M 2.12, publish the runtime option through
+    `zigbee2mqtt/bridge/request/options`, then verify a live window contains zero
+    `debug:` lines. Always restore on-disk `advanced.log_level: info` as well. [env]

@@ -74,3 +74,20 @@ are clamped, applied to `g_config`, and persisted via `app_config.c`.
 (JS) + `docs/CONTRACT.md`, with a parity test that fails on drift. The converter is
 assembled programmatically from the generated module — firmware and converter cannot
 disagree about IDs, types, units or ranges.
+
+## v0.1.14 hardware acceptance — 2026-07-26
+
+The routine browser update preserved `zb_storage`; the device returned to the existing
+network on battery, retained EP1..EP5, and Z2M Configure installed the EP1 Poll Control
+binding. After the five-minute RX window closed, `report_interval_s=30` was queued with
+`sendPolicy:"bulk"`. The next device CheckIn produced
+`checkinRsp(startFastPolling=1)`, Herdsman logged pending-request `send success`, a
+device-originated GET returned `genAnalogOutput.presentValue=30`, and later
+`first_boot=OFF` telemetry retained 30 while `wake_count` advanced. There were no
+failed SET/GET or `NOT_AUTHORIZED` errors.
+
+Herdsman twice timed out waiting for the default response to `fastPollStop`; subsequent
+CheckIns used `startFastPolling=0` and the device followed the 30 s cadence, so this was
+a cleanup-response caveat rather than a stuck-fast-poll or control failure. Runtime
+`state.json` and direct readback were current while `database.db` attributes and
+`swBuildId` lagged; do not use the lagging snapshot as the primary acceptance oracle.
