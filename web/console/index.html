@@ -18,7 +18,7 @@
     button.primary{background:var(--accent);color:#1a1a10;border-color:transparent}
     button:disabled{opacity:.45;cursor:default}
     label.chk{display:flex;gap:6px;align-items:center;color:var(--dim);font-size:13px}
-    #status{font-size:13px;color:var(--dim)} #status.ok{color:var(--ok)} #status.err{color:var(--err)}
+    #status,#archive{font-size:13px;color:var(--dim)} #status.ok,#archive.ok{color:var(--ok)} #status.err,#archive.err{color:var(--err)}
     #log{background:#07090d;border:1px solid var(--line);border-radius:12px;padding:14px;height:60vh;
       overflow-y:auto;white-space:pre-wrap;word-break:break-all;font:12.5px/1.45 ui-monospace,Menlo,Consolas,monospace;color:#c9d4e0}
     .hint{color:var(--dim);font-size:13px;margin-top:12px}
@@ -39,6 +39,7 @@
     <button id="btnCopy">📋 Скопировать лог</button>
     <label class="chk"><input type="checkbox" id="chkAuto" checked>автопереподключение</label>
     <span id="status">не подключено</span>
+    <span id="archive">archive: local only</span>
   </div>
   <div id="log">Нажмите «Подключиться» и выберите USB-порт платы (обычно “USB JTAG/serial debug unit”).
 
@@ -55,7 +56,9 @@ C6-ENVIRO спит между измерениями: порт исчезает 
     · <a href="../">← прошивальщик</a>
   </p>
 </div>
-<script>
+<script type="module">
+import {SerialCapture, captureTokenFromFragment} from "./serial_capture.mjs";
+
 (() => {
   const logEl = document.getElementById('log');
   const st = document.getElementById('status');
@@ -63,15 +66,29 @@ C6-ENVIRO спит между измерениями: порт исчезает 
   const bD = document.getElementById('btnDisconnect');
   const bR = document.getElementById('btnReset');
   const chkAuto = document.getElementById('chkAuto');
+  const archiveEl = document.getElementById('archive');
   let port = null, reader = null, keep = false, wantAuto = false;
   const dec = new TextDecoder();
 
   function setStatus(t, cls){ st.textContent = t; st.className = cls || ''; }
+  function setArchiveStatus(t, cls){ archiveEl.textContent = `archive: ${t}`; archiveEl.className = cls || ''; }
+  const captureToken = captureTokenFromFragment(location.hash);
+  // Fragments are not sent in HTTP requests. Remove it immediately anyway, so a
+  // later copied URL/referrer cannot accidentally reveal a live capability.
+  if (captureToken) history.replaceState(null, "", location.pathname + location.search);
+  const capture = new SerialCapture({
+    endpoint: "/flash/enviro/api/serial/v1/ingest",
+    project: "c6-enviro",
+    token: captureToken,
+    onStatus: setArchiveStatus,
+  });
+  setArchiveStatus(capture.enabled ? "connecting…" : "local only");
   function append(t){
     const stick = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 8;
     logEl.textContent += t;
     if (logEl.textContent.length > 400000) logEl.textContent = logEl.textContent.slice(-300000);
     if (stick) logEl.scrollTop = logEl.scrollHeight;
+    capture.enqueue(t);
   }
 
   if (!('serial' in navigator)) {
@@ -190,8 +207,11 @@ C6-ENVIRO спит между измерениями: порт исчезает 
     if (keep) { try { await port?.close(); } catch {} handleGone(); }
   }
 
+  window.addEventListener('pagehide', () => { void capture.flush(); });
+
   bD.onclick = async () => {
     wantAuto = false; keep = false;
+    void capture.flush();
     try { if (reader) await reader.cancel(); } catch {}
     try { if (port) await port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch {}
     try { if (port) await port.close(); } catch {}

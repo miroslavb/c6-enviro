@@ -38,7 +38,7 @@ without modifying coordinator NVRAM or any sibling device.
 | [`contract/`](contract/) | **Single source of truth** for the Zigbee byte-contract → codegen → C header + JS module + docs |
 | [`firmware/`](firmware/) | ESP-IDF 5.4 firmware: sleepy end device, deep sleep, vendored Bosch BME68x API, ADC battery sense |
 | [`firmware/host-test/`](firmware/host-test/) | `make` → 269 host checks: Li-ion % curve, ZCL encodings, sleep budgeting, status bits |
-| [`web/`](web/) | Browser flasher (esptool-js) + wiring diagram + **auto-reconnecting** web serial console |
+| [`web/`](web/) | Browser flasher (esptool-js) + wiring diagram + auto-reconnecting web serial console; an issued short-lived capture link can archive raw console chunks to the server without putting a token in an HTTP URL |
 | [`z2m/`](z2m/) | Zigbee2MQTT external converter (assembled from the contract) + tests vs real ZHC ^26 |
 | [`homeassistant/`](homeassistant/) | HA notes + optional package (battery-low & gone-silent alerts) |
 | [`deploy/`](deploy/) | c6.miroslav.diy Caddy route |

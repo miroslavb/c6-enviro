@@ -124,6 +124,9 @@ into your `packages/` and adjust entity ids to your friendly name.
 
 - **Web console**: https://c6.miroslav.diy/flash/enviro/console/ — auto-reconnects
   across deep-sleep cycles, so you see every wake's log without touching anything.
+  A normal console URL stays local-only. For durable server capture, open an operator-issued
+  short-lived `#capture=…` link: the capability remains in the browser fragment, is removed
+  from the address bar immediately, and serial chunks append server-side with `archive: active`.
 - A healthy cycle logs:
   `C6-ENVIRO v0.1.13 starting (wake #N, deep-sleep wake)` →
   `vbat: …` → `BME680@0x76: T=…` → `network restored from NVRAM` →

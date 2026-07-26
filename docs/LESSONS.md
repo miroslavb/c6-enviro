@@ -209,3 +209,14 @@ Below: the ones that shaped this firmware, plus everything new.
     before a distinct indirect-control receive opportunity. v0.1.13 reserves a
     1000 ms fast (200 ms) parent-poll slot before telemetry, then restores 1000 ms;
     it does not enable permanent RX. [env]
+43. **Browser-only serial logs are not durable observability.**
+    A Web Serial console reads a device physically attached to the operator's browser,
+    so no server can see those lines unless the browser explicitly relays them. The
+    capture relay uses short-lived per-project capabilities in URL fragments, strips the
+    fragment immediately, sends bounded bearer-authenticated chunks to a loopback-only
+    service, and stores append-only NDJSON. Never solve this with an unauthenticated
+    public log POST endpoint or a token embedded in static JavaScript. [env]
+44. **Caddy static 403 can be a file-mode regression, not a route defect.**
+    A newly deployed `serial_capture.mjs` inherited `0600` from a root-side write;
+    Caddy returned 403 locally and through the edge. Enforce dirs 0755/files 0644 on
+    the static deploy target and verify the real public module URL. [env]
