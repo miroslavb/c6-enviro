@@ -124,6 +124,11 @@ just open permit-join and wait, or tap RESET.
   sends `fastPollStop`. The request lifetime remains cadence-aware: **at least 30 s**,
   current interval + 10 s when larger, capped at **120 s**. At intervals above the cap,
   press RESET/BOOT and submit the change during the bounded awake window.
+- Live v0.1.14 acceptance may still log a timeout waiting for the default response to
+  `fastPollStop` after a successful operation. Treat it as a cleanup caveat only when
+  the queued set/read completed, later device telemetry retained the value, subsequent
+  CheckIns decline fast polling, and the new wake cadence is visible; otherwise it is
+  a real failure requiring investigation.
 
 ## 5. Home Assistant
 

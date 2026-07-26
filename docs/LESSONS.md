@@ -227,3 +227,13 @@ Below: the ones that shaped this firmware, plus everything new.
     control set/get, so `Device.onZclData` can answer CheckIn, flush pending work during
     fast polling, and send FastPollStop. This preserves deep sleep, five endpoints, and
     `rx_on_when_idle=false` without trusting an unstable parent-side indirect queue. [env]
+46. **Judge Poll Control by the queued operation and later cadence, not FastPollStop alone.**
+    Live v0.1.14 battery acceptance after the five-minute RX window proved the full
+    path: `sendPolicy:"bulk"` queued `presentValue=30`; the next CheckIn produced
+    `checkinRsp(startFastPolling=1)`; Herdsman logged pending-request `send success`;
+    device-originated readback returned `presentValue:30`; later `first_boot=OFF`
+    telemetry and `state.json` retained interval 30 across wake-count growth. Herdsman
+    twice timed out waiting for the default response to `fastPollStop`, but subsequent
+    CheckIns used `startFastPolling=0` and the device followed the 30 s cadence, proving
+    it was not stuck fast-polling. Preserve this as a visible caveat, but do not
+    misclassify a successful write/read as failed solely from that tolerant cleanup log. [env]
