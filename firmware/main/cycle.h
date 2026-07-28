@@ -48,6 +48,13 @@ uint32_t cycle_reporting_settle_ms(uint16_t min_interval_s, uint16_t tick_guard_
 // preserve the ZCL max>=min rule without reporting faster than the user asked.
 uint16_t cycle_reporting_max_interval_s(uint16_t report_interval_s, uint16_t min_interval_s);
 
+// A timer-wake reboot recreates reporting state and remains awake only through
+// the reporting settle + flush window. Give the stack a maximum-report deadline
+// one whole tick after the minimum so it can emit one unchanged-value heartbeat
+// before the normal-wake readiness release. This is wake-local: the device still
+// wakes only at the user-configured report cadence.
+uint16_t cycle_reporting_wake_heartbeat_max_interval_s(uint16_t min_interval_s);
+
 // ---- Network/reporting lifecycle ------------------------------------------
 
 typedef enum {

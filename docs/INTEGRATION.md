@@ -51,9 +51,9 @@ pair performs this configure step automatically.
 1. Z2M → **Permit join (all)**.
 2. Power or reset the board. Factory-new firmware steers immediately; the LED goes
    blue (steering) → green (joined).
-   For v0.1.16 the expected IEEE is **`0x8efd49fffe1a3d8c`**.
+   For v0.1.17 the expected IEEE is **`0x8efd49fffe1a3d8c`**.
 3. **Leave it alone for the next few minutes**: after the first join the device stays
-   awake **5 minutes** and v0.1.16 temporarily enables continuous RX only for that
+   awake **5 minutes** and v0.1.17 temporarily enables continuous RX only for that
    bounded window. The first **60 seconds are intentionally quiet** (no
    telemetry/reporting) while it also polls its parent every 200 ms so Z2M can finish
    ZDO discovery. RX is explicitly switched off before reporting; normal timer wakes
@@ -89,7 +89,7 @@ a half-interviewed entry: that creates overlapping interview attempts and
 network-address churn. Acceptance is the Z2M database showing `interviewCompleted:true`,
 `interviewState:"SUCCESSFUL"`, and `epList:[1,2,3,4,5]`.
 
-### v0.1.16 normal-wake environmental reporting
+### v0.1.17 normal-wake environmental reporting
 
 Device-side reporting slots use a one-second minimum interval. v0.1.14 configured
 those slots and immediately pushed T/RH/P; a normal timer wake then slept before a
@@ -99,14 +99,23 @@ observable: normal 30 s timer wakes and AI `wake_count` advanced while T/RH sour
 reports stopped after their initial sequence, and stable pressure (`measuredValue=986`)
 never advanced because its stored maximum reporting interval was 3600 s.
 
-v0.1.16 therefore (1) derives the release delay from the one-second minimum, clears one
-additional full reporting tick, and adds a 200 ms scheduler guard (**2.2 s** total); and
-(2) derives device-side `max_interval` and `def_max_interval` from persisted
-`report_interval_s`, not a fixed one-hour heartbeat. Hardware acceptance must observe
-source T/RH/P reports on multiple `first_boot=OFF` timer wakes; aggregate MQTT cache,
-unchanged numerical state, or cold-boot updates alone do not pass.
+v0.1.16 fixed the first timing boundary with a 2.2 s post-registration release and
+replaced the one-hour maximum with persisted `report_interval_s`. Its 900 s no-erase
+soak then showed fresh T/RH transitions at 30 s but Pressure `last_reported` still
+stuck at `20:26:43.756750 UTC` while `wake_count` advanced 3→34. That is expected for a
+reboot-per-wake ZED: a freshly registered 30 s maximum cannot expire inside its short
+awake window; an aggregate MQTT payload containing cached pressure is not source proof.
 
-If the device leaves while quiet/reporting setup is pending, v0.1.16 keeps the MCU awake
+v0.1.17 primes the measured standard attributes **before** registering normal-wake
+slots and assigns those slots a 2 s wake-local maximum deadline. The 2.2 s readiness
+release plus normal flush then gives the same stack reporting engine time to emit an
+unchanged Pressure value. This does not increase the external cadence: only one normal
+wake occurs per persisted `report_interval_s`. Cold/commissioning slots retain the user
+maximum. Hardware acceptance must observe multiple source/HA T/RH/P reports on
+`first_boot=OFF` wakes; aggregate MQTT cache, unchanged numerical state, or cold-boot
+updates alone do not pass.
+
+If the device leaves while quiet/reporting setup is pending, v0.1.17 keeps the MCU awake
 and follows the already-scheduled steering retry rather than sleeping. A successful
 fresh rejoin from the running cycle reopens the complete five-minute commissioning
 window before telemetry resumes; a normal timer-wake NVRAM restore remains short. If
@@ -168,12 +177,12 @@ into your `packages/` and adjust entity ids to your friendly name.
   short-lived `#capture=…` link: the capability remains in the browser fragment, is removed
   from the address bar immediately, and serial chunks append server-side with `archive: active`.
 - A healthy cycle logs:
-  `C6-ENVIRO v0.1.16 starting (wake #N, deep-sleep wake)` →
+  `C6-ENVIRO v0.1.17 starting (wake #N, deep-sleep wake)` →
   `vbat: …` → `BME680@0x76: T=…` → `network restored from NVRAM` →
   `deep sleep 2… ms`.
 - `factory-new → network steering` in every cycle = the join never succeeded:
   check permit-join / channel / coordinator range.
-- v0.1.16 additionally logs `Zigbee EUI-64 override: 0x8efd49fffe1a3d8c`,
+- v0.1.17 additionally logs `Zigbee EUI-64 override: 0x8efd49fffe1a3d8c`,
   `steering: parent poll every 200 ms`, `normal wake: Poll Control CheckIn tsn=…`,
   `normal wake: 1000 ms control receive phase`, and on a cold boot/BOOT press
   `interview window: continuous Zigbee RX for 300 s`.

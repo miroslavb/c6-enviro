@@ -10,7 +10,7 @@ inherited unchanged; what's new is the sleepy-end-device lifecycle.
 |---|---|---|---|
 | `/root/c6-lcd-zigbee` | Mains-powered Zigbee **Router** | ESP32-C6, ESP-IDF 5.4, esp-zigbee-lib 2.x, endpoint registration, NVS restore, `esp_zb_start(false)`, +20 dBm TX | Router capability keeps RX on by design. |
 | `/root/c6-radiometer` | Mains-powered Zigbee **Router** | Same stack; channel 11 primary; +20 dBm TX was the proven fix for asymmetric ZDO replies | No deep sleep or parent polling. |
-| `/root/c6-enviro` | Solar/Li-ion sleepy **End Device** | Same stack startup, NVS and +20 dBm TX; same five-endpoint interview budget as the successful v0.1.0 | `rx_on_when_idle=false` + 1 s polling normally; v0.1.16 sends Poll Control CheckIn, reserves a 1 s 200 ms parent-poll slot, then waits a full extra reporting tick plus 200 ms guard (2.2 s at the current 1 s minimum) before the first push. Continuous RX remains limited to the bounded 5-minute cold-boot/BOOT interview window. |
+| `/root/c6-enviro` | Solar/Li-ion sleepy **End Device** | Same stack startup, NVS and +20 dBm TX; same five-endpoint interview budget as the successful v0.1.0 | `rx_on_when_idle=false` + 1 s polling normally; v0.1.17 sends Poll Control CheckIn, reserves a 1 s 200 ms parent-poll slot, primes current ZCL values, registers a wake-local 2 s heartbeat deadline, then waits a full extra reporting tick plus 200 ms guard (2.2 s at the current 1 s minimum). Continuous RX remains limited to the bounded 5-minute cold-boot/BOOT interview window. |
 
 The controls rule out a generic ESP32-C6, endpoint-registration, or low-TX-power
 failure. They do **not** justify copying router power semantics into Enviro. The
@@ -28,7 +28,7 @@ boundary: transient coordinator-side joins are not equivalent to device-side BDB
 | Cadence | `report_interval_s`, default **3 s**, writable 3…3600 from HA, NVS-persisted | The spec. Interval-compensated: sleep = period − time awake. |
 | UP telemetry | **STANDARD clusters only** (T 0x0402 / RH 0x0405 / P 0x0403 / PowerConfig 0x0001 on EP1; genAnalogInput EP2–EP5 for gas Ω, vbat mV, status bits, wake counter) | The Z2M addon cannot decode incoming custom-cluster frames (proven live 2026-07-11 on the radiometer). |
 | DOWN config | **Standard EP1 controls:** `genAnalogOutput` (0x000D) `presentValue` for `report_interval_s`; `genOnOff` (0x0006) commands for `gas_enabled`; `genPollCtrl` (0x0020) server for explicit CheckIn | ESP-Zigbee compat NACKs custom `READ_WRITE` attributes with `NOT_AUTHORIZED`. Deep-sleep reboot may change parent, so v0.1.14 queues controls in Herdsman and flushes them only after device-initiated CheckIn; the endpoint count remains five. |
-| Reporting transport | **Stack reporting engine** (self-binding + `esp_zb_zcl_update_reporting_info`, device min=1 s / delta=0 / maximum=`report_interval_s`), enabled only after commissioning's 60 s quiet phase; v0.1.16 clears one full extra reporting tick plus 200 ms after registration before the first push | The only transmit path that emitted frames on this hardware+lib. A normal deep-sleep wake previously registered slots and pushed immediately inside the minimum interval, then slept before a second push; v0.1.15's 1.2 s literal was field-insufficient. A hardcoded 3600 s maximum also left unchanged pressure without a cadence heartbeat. Z2M coordinator-side requests remain min=0. |
+| Reporting transport | **Stack reporting engine** (self-binding + `esp_zb_zcl_update_reporting_info`, device min=1 s / delta=0; normal wake `max=2 s`, cold/commissioning `max=report_interval_s`), enabled only after commissioning's 60 s quiet phase; v0.1.17 primes attributes before slot registration and clears one full extra reporting tick plus 200 ms before the normal push | The only transmit path that emitted frames on this hardware+lib. A normal deep-sleep wake recreates reporting state, so a 30 s maximum cannot expire during its ~5 s awake window; v0.1.16 therefore refreshed changing T/RH but not unchanged Pressure. The 2 s wake-local maximum makes a standard unchanged-value report due before READY while the external wake cadence remains user-configured. Z2M coordinator-side requests remain min=0. |
 | Sensor | Vendored **Bosch BME68x API v4.4.8** (BSD-3), integer mode, forced T/P/H+gas per wake | Official compensation math; forced mode = one conversion per wake; gas trusted only with `GASM_VALID`+`HEAT_STAB`. |
 | Battery sense | ADC1 (GPIO2) + 2×200 kΩ divider, curve-fitting calibration, 8-sample average | PowerConfig gives % (0.5 % units — Z2M divides by 2) and 100 mV voltage; precise mV rides AI EP3. `batteryVoltage` is NOT stack-reportable (esp-zigbee #463) — reading only. On the current field unit the divider midpoint is not connected to GPIO2, so its battery telemetry is floating and cannot be used as evidence. |
 | Commissioning + controls | **200 ms sleepy parent polls begin before BDB steering** and continue through the first **60 s quiet ZDO phase** after `JOINED`; v0.1.12 enables RX only for the enclosing **5-minute cold-boot/BOOT window**, then schedules it off. v0.1.14 adds EP1 Poll Control CheckIn plus the separate **1 s / 200 ms normal-wake receive slot**; five endpoints EP1..EP5 | Live 2026-07-26 showed v0.1.13 telemetry while 10/30 s reads and writes still timed out and consecutive wake routes used different relays. Device-initiated CheckIn gives Herdsman a confirmed window to flush its own pending queue without permanent RX. |
@@ -41,8 +41,9 @@ RTC timer ──► boot (skip-validate) ──► NVS config ──► measure 
    ──► esp_zb_start(false) ──► DEVICE_REBOOT (NVRAM restore)                (~0.5–1.5 s)
    ──► [cold boot / BOOT: 5 min bounded RX; first 60 s quiet ZDO phase, 200 ms parent polls]
    ──► [normal timer wake: genPollCtrl CheckIn → 1 s receive slot, 200 ms polls]
-   ──► configure self-bind/report slots ──► settle full extra tick + 200 ms (2.2 s) ──► push attrs ──► stack reports
-   ──► flush window (2 s, Kconfig) ──► deep sleep (period − awake, floor 0.5 s)
+   ──► mirror current ZCL attrs ──► configure self-bind/report slots (`max=2 s` normal wake)
+   ──► settle full extra tick + 200 ms (2.2 s) ──► normal push / flush window (2 s)
+   ──► deep sleep (period − awake, floor 0.5 s)
 ```
 
 - Measurement happens **before** the radio comes up — data is ready when the network is.
@@ -92,7 +93,7 @@ a cleanup-response caveat rather than a stuck-fast-poll or control failure. Runt
 `state.json` and direct readback were current while `database.db` attributes and
 `swBuildId` lagged; do not use the lagging snapshot as the primary acceptance oracle.
 
-## v0.1.15 → v0.1.16 EP1 reporting fix — 2026-07-28
+## v0.1.15 → v0.1.17 EP1 reporting repair — 2026-07-28
 
 On v0.1.14, raw cluster history showed that standard EP1 temperature/humidity/pressure
 reports stopped after the bounded cold-boot awake phase while EP2–EP5 and `wake_count`
@@ -106,18 +107,26 @@ the 1 s reporting slots. The subsequent no-erase field flash falsified that timi
 normal 30 s wakes reached `first_boot=OFF` and advanced the AI heartbeat, but T/RH source
 reports stopped after their initial sequence. Pressure never advanced in HA during the
 720 s capture: its stored device/Z2M reporting configuration had `maxRepIntval=3600` and
-raw `measuredValue=986`, so a stable pressure had no cadence heartbeat. The field pattern
-is consistent with a whole-second reporting threshold leaving the one normal-wake push too
-early, but acceptance must test that hypothesis on hardware.
+raw `measuredValue=986`, so a stable pressure had no cadence heartbeat.
 
-v0.1.16 replaces the literal with `cycle_reporting_settle_ms(min_interval, guard)`.
-For the required 1 s minimum it waits one additional whole tick plus 200 ms (**2.2 s**)
-before emitting `ZB_EVT_REPORTING_READY`; it also derives both device-side
-`max_interval` and `def_max_interval` from the persisted `report_interval_s`, rather than
-leaving a 3600 s maximum. These contracts are host- and source-tested. Both the setup and
-delayed-ready alarms remain cancelled on replacement and `LEAVE`. Hardware acceptance
-remains a separate no-erase flash plus long normal-wake soak; this section records the
-diagnosis and software contract only.
+v0.1.16 replaced the literal with `cycle_reporting_settle_ms(min_interval, guard)` and
+derived max fields from persisted `report_interval_s`. Its separate 900 s no-erase soak
+proved the settle repair for changing values — `wake_count` advanced **3→34** and HA
+recorded new T/RH timestamps at roughly 30 s — but falsified the configured-max theory:
+Pressure `last_reported` remained exactly `20:26:43.756750 UTC` while the aggregate MQTT
+payload merely repeated cached `98.6`. A per-wake ZBOSS reporting record is younger than
+the 30 s maximum when the sleepy MCU returns to deep sleep, so the maximum cannot emit its
+unchanged-value heartbeat.
+
+v0.1.17 keeps the 2.2 s readiness guard but mirrors `g_measurement` into the ZCL backing
+store **before** registering ordinary-wake slots. Those slots use
+`cycle_reporting_wake_heartbeat_max_interval_s(1) == 2` for both max fields; the standard
+engine therefore has a same-value heartbeat deadline before READY, and the following flush
+keeps the radio available to send it. Cold/commissioning paths retain the persisted
+`report_interval_s` maximum. This changes neither the user-visible cadence nor the sleepy
+role: the device still wakes once per configured interval. Host/source tests guard the
+prime-before-register ordering and deadline; no-erase hardware acceptance still requires
+multiple source/HA T/RH/P timestamp transitions, including unchanged Pressure.
 
 Independent review found two recovery consequences around that wait. The main loop now
 classifies `READY`, `REJOIN`, and `TIMEOUT` explicitly: `LEFT` outranks stale `READY`

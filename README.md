@@ -7,7 +7,7 @@ single Li-ion cell. A **sleepy Zigbee end device** that wakes from deep sleep ev
 BME680 offers plus the battery voltage, reports over **Zigbee2MQTT**, and goes back
 to sleep. Flash it from the browser at **https://c6.miroslav.diy/flash/enviro/**.
 
-Firmware **v0.1.16** uses recovery EUI-64 `0x8efd49fffe1a3d8c`. A full-flash erase
+Firmware **v0.1.17** uses recovery EUI-64 `0x8efd49fffe1a3d8c`. A full-flash erase
 during the v0.1.8 field test destroyed `zb_storage`, while the coordinator retained
 the old EUI's trust-center key. The new local-admin identity isolates this one sensor
 without modifying coordinator NVRAM or any sibling device.
@@ -16,16 +16,18 @@ without modifying coordinator NVRAM or any sibling device.
 to battery power, Z2M bound EP1 Poll Control and delivered queued normal-sleep
 SET/GET for `report_interval_s=30`. Direct readback and later `first_boot=OFF`
 telemetry retained 30 across increasing wake counts. See `docs/LESSONS.md` items
-45–55 for the evidence and operational caveats.
+45–56 for the evidence and operational caveats.
 
-**v0.1.16 normal-wake reporting candidate:** a no-erase v0.1.15 field flash
-kept 30 s timer wakes and `first_boot=OFF`, but standard EP1 reports stopped
-after the initially active reporting sequence. The BME680 and AI heartbeat
-path remained alive. Two safeguards are now paired: the sole normal-wake push
-waits through a full extra 1 s reporting tick plus a 200 ms scheduler guard
-(**2.2 s**), and each device-side reporting slot uses `report_interval_s` as
-its maximum heartbeat rather than a fixed 3600 s. The no-erase hardware soak,
-including source T/RH/P timestamps, remains the acceptance gate.
+**v0.1.17 normal-wake reporting candidate:** v0.1.16's 900-second no-erase
+field soak retained 30-second timer wakes and `first_boot=OFF`; it restored fresh
+Temperature/Humidity reports but **not** a source Pressure heartbeat. Pressure's
+unchanged value stayed cached while `wake_count` advanced, proving that a
+`report_interval_s` maximum cannot elapse inside a reboot-per-wake sleepy cycle.
+v0.1.17 keeps the proven 2.2-second post-registration settle, but first mirrors
+current measurements into the ZCL backing store, then gives each ordinary wake a
+**2-second wake-local standard-report deadline**. It can therefore send the same
+Pressure value once per 30-second wake without a manual-report API or a faster
+external cadence. A no-erase source/HA T/RH/P soak remains the acceptance gate.
 
 ```
  ☀ solar ─► Waveshare Solar     ┌──────────── ESP32-C6 Super Mini ────────────┐
@@ -73,14 +75,15 @@ bash scripts/build-firmware.sh          # → web/firmware/*.bin + manifest.json
 #    Routine update: DO NOT erase whole flash; preserve zb_storage.
 
 # 4. Pair: install z2m/ converter → restart Z2M → Permit join → reset the board.
-#    Expected v0.1.16 IEEE: 0x8efd49fffe1a3d8c.
+#    Expected v0.1.17 IEEE: 0x8efd49fffe1a3d8c.
 #    It stays awake 5 minutes after a fresh join or firmware-update cold boot.
-#    v0.1.16 turns continuous RX on only inside that bounded interview window;
+#    v0.1.17 turns continuous RX on only inside that bounded interview window;
 #    the first 60 s also use 200 ms parent polls for ZDO/security traffic. Every
 #    normal timer wake sends a standard Poll Control CheckIn, then reserves a
-#    1 s 200 ms-poll slot to flush queued Z2M controls, registers reporting with a
-#    maximum heartbeat equal to `report_interval_s`, waits a 2.2 s whole-tick-plus-
-#    guard settle, and only then pushes telemetry.
+#    1 s 200 ms-poll slot to flush queued Z2M controls, primes the measured ZCL
+#    values, registers reporting with a 2 s wake-local heartbeat deadline, waits
+#    the 2.2 s whole-tick-plus-guard settle, and only then releases the normal
+#    telemetry push. The external wake/report cadence remains `report_interval_s`.
 ```
 
 Full setup: [`docs/INTEGRATION.md`](docs/INTEGRATION.md) · design rationale:
@@ -96,5 +99,5 @@ desolder it for true µA sleep. Numbers and math: [`docs/WIRING.md`](docs/WIRING
 
 > **Current field unit:** its battery-divider midpoint is not connected to GPIO2.
 > Treat `vbat_mv`, `battery`, `voltage`, and `battery_low` as floating/invalid until
-> the wiring is installed; they were excluded from the v0.1.16 normal-wake
+> the wiring is installed; they were excluded from the v0.1.17 normal-wake
 > reporting diagnosis.

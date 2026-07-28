@@ -83,6 +83,14 @@ uint16_t cycle_reporting_max_interval_s(uint16_t report_interval_s, uint16_t min
     return report_interval_s;
 }
 
+uint16_t cycle_reporting_wake_heartbeat_max_interval_s(uint16_t min_interval_s)
+{
+    // The reporting-ready callback waits (min + 1) whole seconds plus a guard.
+    // Use that unguarded integer deadline so an unchanged value is due shortly
+    // before READY, while the following flush still keeps the sleepy radio awake.
+    return (uint16_t)(min_interval_s + 1u);
+}
+
 // ---- Network/reporting lifecycle ------------------------------------------
 
 cycle_report_action_t cycle_report_action(bool ready, bool left)
