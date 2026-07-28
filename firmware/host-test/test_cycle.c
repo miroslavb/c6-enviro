@@ -78,6 +78,7 @@ extern uint32_t cycle_reporting_settle_ms(uint16_t min_interval_s,
                                           uint16_t tick_guard_ms);
 extern uint16_t cycle_reporting_max_interval_s(uint16_t report_interval_s,
                                                 uint16_t min_interval_s);
+extern uint16_t cycle_reporting_wake_heartbeat_max_interval_s(uint16_t min_interval_s);
 
 static void test_reporting_settle_guard(void)
 {
@@ -99,6 +100,17 @@ static void test_reporting_max_interval(void)
           "max interval must never fall below the reporting minimum");
     CHECK(cycle_reporting_max_interval_s(0, 1) == 1,
           "invalid zero requested max clamps to the reporting minimum");
+}
+
+static void test_reporting_wake_heartbeat_max_interval(void)
+{
+    // A deep-sleep reboot recreates reporting state each wake. The configured
+    // 30 s max can never expire in its ~5 s awake window; force one stack-owned
+    // heartbeat deadline before the 2.2 s reporting-ready release instead.
+    CHECK(cycle_reporting_wake_heartbeat_max_interval_s(1) == 2,
+          "1s report minimum needs a 2s wake-local heartbeat deadline");
+    CHECK(cycle_reporting_wake_heartbeat_max_interval_s(3) == 4,
+          "wake-local heartbeat stays one full tick beyond larger minima");
 }
 
 static void test_reporting_wait_action(void)
@@ -173,6 +185,7 @@ int main(void)
     test_sleep_ms();
     test_reporting_settle_guard();
     test_reporting_max_interval();
+    test_reporting_wake_heartbeat_max_interval();
     test_reporting_wait_action();
     test_join_awake_window();
     test_join_wait_deadline();

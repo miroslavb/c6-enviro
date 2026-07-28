@@ -297,15 +297,25 @@ Below: the ones that shaped this firmware, plus everything new.
     commissioning window, its battery guard must compare the current time against the
     later of a fresh join deadline and `s_awake_until_us`; checking only whether the
     latter is zero turns a stale timestamp into an infinite radio-scan loop. [env]
-55. **More than the nominal minimum is not necessarily a full reporting tick — and
-    `max_interval` is part of the user-visible cadence.** A no-erase v0.1.15 field
-    flash on 2026-07-28 retained `report_interval_s=30` and continued normal wakes with
-    `first_boot=OFF`; T/RH source reports stopped after their initial sequence while the
-    AI heartbeat advanced. Pressure's stored `measuredValue=986` also had a 3600 s
-    maximum reporting interval, so unchanged pressure had no 30 s heartbeat. Thus the
-    1200 ms delay and one-hour max are not acceptance evidence for a one-shot deep-sleep
-    wake. v0.1.16 uses shared `cycle_reporting_settle_ms(min_interval, guard)` (one
-    additional whole second plus 200 ms: 2200 ms for `min_interval=1`) and derives both
-    device-side max fields from `report_interval_s`. The exact ZBOSS tick mechanism and
-    persistence of the max heartbeat remain hypotheses until the no-erase hardware soak
-    shows fresh source T/RH/P reports on several ordinary wakes. [env]
+55. **A configured maximum cannot accumulate across a reboot-per-wake sleepy
+    lifecycle.** A no-erase v0.1.15 field flash on 2026-07-28 retained
+    `report_interval_s=30` and continued normal wakes with `first_boot=OFF`; T/RH source
+    reports stopped after their initial sequence while the AI heartbeat advanced. Pressure's
+    stored `measuredValue=986` also had a 3600 s maximum reporting interval, so unchanged
+    pressure had no cadence heartbeat. v0.1.16 correctly replaced the fragile 1200 ms
+    delay with `cycle_reporting_settle_ms(min_interval, guard)` (2200 ms for min=1) and
+    derived max fields from `report_interval_s`. Its independent 900 s field soak proved
+    the timing improvement for changing values — T/RH refreshed roughly every 30 s — but
+    Pressure `last_reported` remained at `20:26:43.756750 UTC` while `wake_count` advanced
+    3→34. A reporting record recreated on each reboot is never 30 s old before deep sleep;
+    aggregate MQTT pressure remains cache evidence, not a source report. [env]
+56. **Prime first, then use a wake-local maximum deadline for unchanged values.**
+    v0.1.17 writes the current BME680 measurement into the ZCL backing store *before*
+    registering normal-wake slots, then sets both standard slot max fields to
+    `cycle_reporting_wake_heartbeat_max_interval_s(1) = 2 s`. The existing 2.2 s
+    readiness wait makes that standard-engine heartbeat due before the normal push, and
+    the following flush keeps the sleepy radio available. The external cadence does not
+    become 2 s: there is one such opportunity only on each `report_interval_s` timer wake.
+    Keep `report_interval_s` maxima for cold/commissioning paths, never resurrect the
+    unsafe manual-report API, and accept this only after a no-erase soak shows advancing
+    source/HA Pressure timestamps on multiple `first_boot=OFF` wakes. [env]

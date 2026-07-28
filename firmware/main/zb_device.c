@@ -81,6 +81,9 @@ static zb_event_cb_t s_event_cb = NULL;
 static bool s_joined = false;
 static bool s_factory_new_boot = false;
 static bool s_commissioning_boot = false;
+// True only for the short post-deep-sleep wake. Its reporting slots must emit
+// one stack-owned heartbeat before the cycle goes back to deep sleep.
+static bool s_wake_local_heartbeat = false;
 
 static void emit(zb_event_t evt)
 {
@@ -344,10 +347,20 @@ static void bind_done_cb(esp_zb_zdp_status_t status, void *user_ctx)
              status == ESP_ZB_ZDP_STATUS_SUCCESS ? "OK" : "FAILED");
 }
 
-static void setup_self_reporting(void)
+static void mirror_measurement_attributes(const enviro_measurement_t *m);
+
+static void setup_self_reporting(bool wake_local_heartbeat)
 {
     esp_zb_ieee_addr_t tc_addr;
     esp_zb_aps_get_trust_center_address(tc_addr);
+    // A normal timer wake recreates its reporting state, so the configured
+    // 30-second heartbeat cannot expire before the MCU sleeps again. Use a
+    // wake-local deadline that arrives just before REPORTING_READY instead.
+    // Cold-boot/commissioning stays awake and retains the user-configured max.
+    const uint16_t max_interval = wake_local_heartbeat
+        ? cycle_reporting_wake_heartbeat_max_interval_s(REPORTING_MIN_INTERVAL_S)
+        : cycle_reporting_max_interval_s(g_config.report_interval_s,
+                                         REPORTING_MIN_INTERVAL_S);
 
     for (size_t i = 0; i < REPORT_SLOT_COUNT; i++) {
         const rep_slot_t *s = &REPORT_SLOTS[i];
@@ -368,9 +381,9 @@ static void setup_self_reporting(void)
         //    min_interval = 0 with ESP_ERR_INVALID_ARG (field 2026-07-23: every
         //    slot on every endpoint failed registration; the router builds in
         //    the sibling projects used min 5..30 and never tripped this). 1 s
-        //    still fits comfortably inside the 2 s report-flush window. The max
-        //    tracks the persisted measurement/report cadence, requesting a bounded
-        //    heartbeat even for an unchanged standard value (notably pressure).
+        //    still fits comfortably inside the 2 s report-flush window. On a
+        //    normal deep-sleep wake max is wake-local; otherwise it tracks the
+        //    persisted measurement/report cadence.
         esp_zb_zcl_reporting_info_t info = {0};
         info.direction    = ESP_ZB_ZCL_REPORT_DIRECTION_SEND;
         info.ep           = s->ep;
@@ -378,11 +391,9 @@ static void setup_self_reporting(void)
         info.cluster_role = ESP_ZB_ZCL_CLUSTER_SERVER_ROLE;
         info.attr_id      = s->attr;
         info.u.send_info.min_interval     = REPORTING_MIN_INTERVAL_S;
-        info.u.send_info.max_interval     =
-            cycle_reporting_max_interval_s(g_config.report_interval_s, REPORTING_MIN_INTERVAL_S);
+        info.u.send_info.max_interval     = max_interval;
         info.u.send_info.def_min_interval = REPORTING_MIN_INTERVAL_S;
-        info.u.send_info.def_max_interval =
-            cycle_reporting_max_interval_s(g_config.report_interval_s, REPORTING_MIN_INTERVAL_S);
+        info.u.send_info.def_max_interval = max_interval;
         if (s->analog) info.u.send_info.delta.f32 = 0.0f;  // any change
         else           info.u.send_info.delta.u16 = 0;
         info.dst.short_addr = 0x0000;                    // coordinator
@@ -410,7 +421,11 @@ static void setup_self_reporting_cb(uint8_t param)
     // The bounded receive phase is over. Restore the normal low-duty
     // parent-poll interval before device-side bind/report traffic begins.
     ezb_nwk_set_keepalive_interval(ED_KEEP_ALIVE_MS);
-    setup_self_reporting();
+    // Prime current values BEFORE registration. Otherwise a short max deadline
+    // can observe this reboot's zero-initialized backing store rather than the
+    // BME680 measurement it is meant to heartbeat.
+    mirror_measurement_attributes(&g_measurement);
+    setup_self_reporting(s_wake_local_heartbeat);
     esp_zb_scheduler_alarm(reporting_ready_cb, 0,
                            cycle_reporting_settle_ms(REPORTING_MIN_INTERVAL_S,
                                                      REPORTING_TICK_GUARD_MS));
@@ -421,6 +436,7 @@ static void schedule_self_reporting(bool quiet)
     const uint32_t delay_ms = quiet ? INTERVIEW_QUIET_MS : NORMAL_CONTROL_POLL_WINDOW_MS;
     // At most one delayed setup may survive. A quick leave/rejoin must start a
     // fresh quiet phase instead of inheriting the old join's nearly-expired alarm.
+    s_wake_local_heartbeat = !quiet;
     esp_zb_scheduler_alarm_cancel(setup_self_reporting_cb, 0);
     esp_zb_scheduler_alarm_cancel(reporting_ready_cb, 0);
     if (quiet) {
@@ -461,10 +477,8 @@ static void flush_done_cb(uint8_t param)
     emit(ZB_EVT_REPORT_FLUSHED);
 }
 
-static void push_cb(uint8_t param)
+static void mirror_measurement_attributes(const enviro_measurement_t *m)
 {
-    (void)param;
-    const enviro_measurement_t *m = &g_measurement;
 
     // ---- EP1 standard clusters ----
     // v0.1.2: capture + log every set status — the field mystery is WHY these
@@ -517,7 +531,12 @@ static void push_cb(uint8_t param)
     set_ai_present_value(AI_EP_VBAT_MV,        (float)m->vbat_mv);
     set_ai_present_value(AI_EP_STATUS_FLAGS,   (float)s_status);
     set_ai_present_value(AI_EP_WAKE_COUNT,     (float)m->wake_count);
+}
 
+static void push_cb(uint8_t param)
+{
+    (void)param;
+    mirror_measurement_attributes(&g_measurement);
     // Give the stack engine + parent polling a window to move the frames out,
     // then let main decide (sleep / stay awake).
     esp_zb_scheduler_alarm(flush_done_cb, 0, CONFIG_ENVIRO_REPORT_FLUSH_MS);
@@ -756,6 +775,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         if (s_joined) {
             ESP_LOGW(TAG, "left the network — restarting steering");
             s_joined = false;
+            s_wake_local_heartbeat = false;
             esp_zb_scheduler_alarm_cancel(setup_self_reporting_cb, 0);
             esp_zb_scheduler_alarm_cancel(reporting_ready_cb, 0);
             schedule_steering_retry(1000);

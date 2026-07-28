@@ -116,7 +116,7 @@ test("bounded fast parent polling serves the quiet interview phase", () => {
     "static void schedule_self_reporting(bool quiet)",
   );
   const restore = callback.indexOf("ezb_nwk_set_keepalive_interval(ED_KEEP_ALIVE_MS);");
-  const setup = callback.indexOf("setup_self_reporting();");
+  const setup = callback.indexOf("setup_self_reporting(s_wake_local_heartbeat);");
   assert.notEqual(restore, -1, "normal 1 s keepalive is not restored after quiet phase");
   assert.ok(restore < setup, "normal keepalive must be restored before reporting starts");
 
@@ -149,9 +149,14 @@ test("sole normal-wake push clears a full reporting tick plus scheduler guard", 
     "static void setup_self_reporting_cb(uint8_t param)",
     "static void schedule_self_reporting(bool quiet)",
   );
-  const configure = setup.indexOf("setup_self_reporting();");
+  const configure = setup.indexOf("setup_self_reporting(s_wake_local_heartbeat);");
   const delayedReady = setup.indexOf("cycle_reporting_settle_ms(");
-  assert.notEqual(configure, -1, "device-side reporting setup is missing");
+  const prime = setup.indexOf("mirror_measurement_attributes(&g_measurement);");
+  assert.notEqual(prime, -1,
+    "normal wake must prime the measured ZCL values before its heartbeat deadline starts");
+  assert.notEqual(configure, -1, "device-side reporting setup is missing its wake-local mode");
+  assert.ok(prime < configure,
+    "the reporting engine must never see reset-zero attributes before a normal-wake heartbeat");
   assert.notEqual(delayedReady, -1, "normal wake has no derived post-registration settle");
   assert.ok(configure < delayedReady,
     "reporting slots must be registered before the whole-tick settle begins");
@@ -165,15 +170,18 @@ test("sole normal-wake push clears a full reporting tick plus scheduler guard", 
 
   const slots = functionBody(
     zbSource,
-    "static void setup_self_reporting(void)",
-    "static void setup_self_reporting_cb(uint8_t param)",
+    "static void setup_self_reporting(bool wake_local_heartbeat)",
+    "static void reporting_ready_cb(uint8_t param)",
   );
   assert.match(slots,
-    /max_interval\s*=\s*cycle_reporting_max_interval_s\s*\(\s*g_config\.report_interval_s\s*,\s*REPORTING_MIN_INTERVAL_S\s*\)/,
-    "the ZCL maximum-report heartbeat must follow the configured deep-sleep cadence");
+    /const\s+uint16_t\s+max_interval\s*=\s*wake_local_heartbeat\s*\?\s*cycle_reporting_wake_heartbeat_max_interval_s\s*\(\s*REPORTING_MIN_INTERVAL_S\s*\)\s*:\s*cycle_reporting_max_interval_s\s*\(\s*g_config\.report_interval_s\s*,\s*REPORTING_MIN_INTERVAL_S\s*\)/,
+    "normal deep-sleep wake must create a heartbeat deadline that fits before its reporting-ready release");
   assert.match(slots,
-    /def_max_interval\s*=\s*cycle_reporting_max_interval_s\s*\(\s*g_config\.report_interval_s\s*,\s*REPORTING_MIN_INTERVAL_S\s*\)/,
-    "default max interval must match the active cadence heartbeat");
+    /max_interval\s*=\s*max_interval\s*;/,
+    "the active ZCL reporting maximum must use the selected wake-local/configured deadline");
+  assert.match(slots,
+    /def_max_interval\s*=\s*max_interval\s*;/,
+    "the default ZCL reporting maximum must match the selected deadline");
   assert.doesNotMatch(slots, /max_interval\s*=\s*3600/,
     "a one-hour static heartbeat cannot satisfy a 3–3600s sleepy cadence");
 });
@@ -190,6 +198,9 @@ test("normal timer wakes reserve a bounded fast-poll slot for queued controls", 
   assert.match(schedule,
     /const\s+uint32_t\s+delay_ms\s*=\s*quiet\s*\?\s*INTERVIEW_QUIET_MS\s*:\s*NORMAL_CONTROL_POLL_WINDOW_MS/,
     "normal wake still starts reporting immediately instead of receiving queued controls first");
+  assert.match(schedule,
+    /s_wake_local_heartbeat\s*=\s*!quiet\s*;/,
+    "only ordinary timer wakes may use the short wake-local heartbeat deadline");
   assert.match(schedule,
     /else\s*\{[\s\S]*?ezb_nwk_set_keepalive_interval\s*\(\s*INTERVIEW_POLL_MS\s*\)/,
     "normal control slot does not use fast sleepy-parent polling");
