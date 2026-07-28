@@ -71,6 +71,81 @@ static void test_sleep_ms(void)
     CHECK(cycle_sleep_ms(3, 0, 500) == 3000, "0 awake -> full period");
 }
 
+// New normal-wake guard contract: with a strict whole-second reporting clock,
+// release the sole wake-cycle write only after the NEXT full tick plus margin.
+// Declared locally so this RED test links only once production implements it.
+extern uint32_t cycle_reporting_settle_ms(uint16_t min_interval_s,
+                                          uint16_t tick_guard_ms);
+extern uint16_t cycle_reporting_max_interval_s(uint16_t report_interval_s,
+                                                uint16_t min_interval_s);
+
+static void test_reporting_settle_guard(void)
+{
+    CHECK(cycle_reporting_settle_ms(1, 0) == 2000,
+          "1s strict reporting minimum needs the next whole second");
+    CHECK(cycle_reporting_settle_ms(1, 200) == 2200,
+          "1s strict reporting minimum plus 200ms guard -> 2200ms");
+    CHECK(cycle_reporting_settle_ms(3, 200) == 4200,
+          "settle preserves a full extra reporting tick at larger minima");
+}
+
+static void test_reporting_max_interval(void)
+{
+    CHECK(cycle_reporting_max_interval_s(3, 1) == 3,
+          "minimum supported 3s cadence must not emit a faster heartbeat");
+    CHECK(cycle_reporting_max_interval_s(30, 1) == 30,
+          "30s configuration is the reporting maximum heartbeat");
+    CHECK(cycle_reporting_max_interval_s(1, 1) == 1,
+          "max interval must never fall below the reporting minimum");
+    CHECK(cycle_reporting_max_interval_s(0, 1) == 1,
+          "invalid zero requested max clamps to the reporting minimum");
+}
+
+static void test_reporting_wait_action(void)
+{
+    CHECK(cycle_report_action(false, false) == CYCLE_REPORT_TIMEOUT,
+          "no READY/LEFT event -> timeout");
+    CHECK(cycle_report_action(true, false) == CYCLE_REPORT_READY,
+          "READY alone -> push");
+    CHECK(cycle_report_action(false, true) == CYCLE_REPORT_REJOIN,
+          "LEFT during reporting settle -> rejoin");
+    CHECK(cycle_report_action(true, true) == CYCLE_REPORT_REJOIN,
+          "LEFT wins over simultaneous stale READY");
+}
+
+static void test_join_awake_window(void)
+{
+    CHECK(cycle_join_opens_awake_window(true, false),
+          "fresh steering join after a timer wake reopens commissioning window");
+    CHECK(cycle_join_opens_awake_window(true, true),
+          "fresh steering join on cold boot opens commissioning window");
+    CHECK(cycle_join_opens_awake_window(false, true),
+          "cold-boot NVRAM restore reopens commissioning window");
+    CHECK(!cycle_join_opens_awake_window(false, false),
+          "normal timer NVRAM restore remains a short battery wake");
+}
+
+static void test_join_wait_deadline(void)
+{
+    const int64_t start = 1000000;
+    const int64_t commissioning_end = start + 300000000;
+
+    CHECK(!cycle_join_wait_expired(start + 59000000, start, 60, 0),
+          "normal join remains awake inside its 60 s budget");
+    CHECK(cycle_join_wait_expired(start + 60000000, start, 60, 0),
+          "normal failed join expires at 60 s");
+    CHECK(!cycle_join_wait_expired(start + 299000000, start, 60,
+                                   commissioning_end),
+          "active commissioning window may outlive the join timeout");
+    CHECK(cycle_join_wait_expired(commissioning_end, start, 60,
+                                  commissioning_end),
+          "failed rejoin expires when the longer commissioning window ends");
+    CHECK(!cycle_join_wait_expired(start + 59000000, start, 60, start - 1),
+          "stale awake timestamp cannot shorten a new join budget");
+    CHECK(cycle_join_wait_expired(start + 60000000, start, 60, start - 1),
+          "stale nonzero awake timestamp cannot disable the battery timeout");
+}
+
 static void test_status_flags(void)
 {
     // Bit numbers mirror the generated contract (contract.json statusBits).
@@ -96,6 +171,11 @@ int main(void)
     test_battery_zcl();
     test_clamp_interval();
     test_sleep_ms();
+    test_reporting_settle_guard();
+    test_reporting_max_interval();
+    test_reporting_wait_action();
+    test_join_awake_window();
+    test_join_wait_deadline();
     test_status_flags();
 
     printf("%s: %d passed, %d failed\n", g_fail ? "FAIL" : "OK", g_pass, g_fail);

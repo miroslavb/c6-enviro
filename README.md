@@ -7,16 +7,25 @@ single Li-ion cell. A **sleepy Zigbee end device** that wakes from deep sleep ev
 BME680 offers plus the battery voltage, reports over **Zigbee2MQTT**, and goes back
 to sleep. Flash it from the browser at **https://c6.miroslav.diy/flash/enviro/**.
 
-Firmware **v0.1.14** uses recovery EUI-64 `0x8efd49fffe1a3d8c`. A full-flash erase
+Firmware **v0.1.16** uses recovery EUI-64 `0x8efd49fffe1a3d8c`. A full-flash erase
 during the v0.1.8 field test destroyed `zb_storage`, while the coordinator retained
 the old EUI's trust-center key. The new local-admin identity isolates this one sensor
 without modifying coordinator NVRAM or any sibling device.
 
-**Hardware acceptance passed 2026-07-26:** after a routine no-erase update and return
+**v0.1.14 control-path hardware acceptance passed 2026-07-26:** after a routine no-erase update and return
 to battery power, Z2M bound EP1 Poll Control and delivered queued normal-sleep
 SET/GET for `report_interval_s=30`. Direct readback and later `first_boot=OFF`
 telemetry retained 30 across increasing wake counts. See `docs/LESSONS.md` items
-45–52 for the evidence and operational caveats.
+45–55 for the evidence and operational caveats.
+
+**v0.1.16 normal-wake reporting candidate:** a no-erase v0.1.15 field flash
+kept 30 s timer wakes and `first_boot=OFF`, but standard EP1 reports stopped
+after the initially active reporting sequence. The BME680 and AI heartbeat
+path remained alive. Two safeguards are now paired: the sole normal-wake push
+waits through a full extra 1 s reporting tick plus a 200 ms scheduler guard
+(**2.2 s**), and each device-side reporting slot uses `report_interval_s` as
+its maximum heartbeat rather than a fixed 3600 s. The no-erase hardware soak,
+including source T/RH/P timestamps, remains the acceptance gate.
 
 ```
  ☀ solar ─► Waveshare Solar     ┌──────────── ESP32-C6 Super Mini ────────────┐
@@ -43,7 +52,7 @@ telemetry retained 30 across increasing wake counts. See `docs/LESSONS.md` items
 |---|---|
 | [`contract/`](contract/) | **Single source of truth** for the Zigbee byte-contract → codegen → C header + JS module + docs |
 | [`firmware/`](firmware/) | ESP-IDF 5.4 firmware: sleepy end device, deep sleep, vendored Bosch BME68x API, ADC battery sense |
-| [`firmware/host-test/`](firmware/host-test/) | `make` → 269 host checks: Li-ion % curve, ZCL encodings, sleep budgeting, status bits |
+| [`firmware/host-test/`](firmware/host-test/) | `make` → pure-C host checks: lifecycle deadlines/actions, Li-ion % curve, ZCL encodings, sleep budgeting, status bits |
 | [`web/`](web/) | Browser flasher (esptool-js) + wiring diagram + auto-reconnecting web serial console; an issued short-lived capture link can archive raw console chunks to the server without putting a token in an HTTP URL |
 | [`z2m/`](z2m/) | Zigbee2MQTT external converter (assembled from the contract) + tests vs real ZHC ^26 |
 | [`homeassistant/`](homeassistant/) | HA notes + optional package (battery-low & gone-silent alerts) |
@@ -64,12 +73,14 @@ bash scripts/build-firmware.sh          # → web/firmware/*.bin + manifest.json
 #    Routine update: DO NOT erase whole flash; preserve zb_storage.
 
 # 4. Pair: install z2m/ converter → restart Z2M → Permit join → reset the board.
-#    Expected v0.1.14 IEEE: 0x8efd49fffe1a3d8c.
+#    Expected v0.1.16 IEEE: 0x8efd49fffe1a3d8c.
 #    It stays awake 5 minutes after a fresh join or firmware-update cold boot.
-#    v0.1.14 turns continuous RX on only inside that bounded interview window;
+#    v0.1.16 turns continuous RX on only inside that bounded interview window;
 #    the first 60 s also use 200 ms parent polls for ZDO/security traffic. Every
 #    normal timer wake sends a standard Poll Control CheckIn, then reserves a
-#    1 s 200 ms-poll slot to flush queued Z2M controls before reporting.
+#    1 s 200 ms-poll slot to flush queued Z2M controls, registers reporting with a
+#    maximum heartbeat equal to `report_interval_s`, waits a 2.2 s whole-tick-plus-
+#    guard settle, and only then pushes telemetry.
 ```
 
 Full setup: [`docs/INTEGRATION.md`](docs/INTEGRATION.md) · design rationale:
@@ -82,3 +93,8 @@ A 3 s cadence keeps the radio duty cycle near 50 % — great **on solar**, ~2–
 a bare 2000 mAh cell. `report_interval_s: 60` → ~1 month battery-only;
 `300` → several months. The WS2812 on the Super Mini leaks ~0.3 mA even when dark —
 desolder it for true µA sleep. Numbers and math: [`docs/WIRING.md`](docs/WIRING.md).
+
+> **Current field unit:** its battery-divider midpoint is not connected to GPIO2.
+> Treat `vbat_mv`, `battery`, `voltage`, and `battery_low` as floating/invalid until
+> the wiring is installed; they were excluded from the v0.1.16 normal-wake
+> reporting diagnosis.

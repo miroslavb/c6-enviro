@@ -275,3 +275,37 @@ Below: the ones that shaped this firmware, plus everything new.
     For Z2M 2.12, publish the runtime option through
     `zigbee2mqtt/bridge/request/options`, then verify a live window contains zero
     `debug:` lines. Always restore on-disk `advanced.log_level: info` as well. [env]
+53. **A normal-wake first push must occur after the reporting minimum interval.**
+    v0.1.14 registered device-side slots with `min_interval=1`, emitted
+    `REPORTING_READY` synchronously, pushed EP1 immediately, and returned to deep sleep
+    before any second push. During the five-minute awake window later pushes reported;
+    normal one-shot wakes left T/RH/P stale while AI heartbeat channels advanced. A
+    controlled physical perturbation plus direct ZCL read showed a changed temperature
+    in the device attribute store, excluding BME680 death and Z2M cache as the cause.
+    v0.1.15 waits `REPORTING_SETTLE_MS=1200` before releasing the first push and cancels
+    both delayed setup/ready alarms on replacement or `LEAVE`. Also distinguish Z2M's
+    aggregate MQTT state (which repeats cached values) from raw `attributeReport` frames. [env]
+54. **A delayed READY adds a recovery state, not a new boolean timeout.** Independent
+    review caught that `LEFT` during quiet/setup/settle returned the same `false` as a
+    true timeout, so main deep-slept while steering was already scheduled. It also
+    caught a duplicated mid-cycle rejoin path that failed to arm the five-minute window
+    after `EVT_FIRST_JOIN`. Model reporting wait as `READY / REJOIN / TIMEOUT`, give
+    `LEFT` priority over stale `READY`, and route startup plus mid-cycle recovery through
+    one lifecycle. A fresh association always opens the commissioning window; a plain
+    timer NVRAM restore does not. Test the transition policy as pure host C in addition
+    to source-contract checks. Because the shared rejoin path can now run after an old
+    commissioning window, its battery guard must compare the current time against the
+    later of a fresh join deadline and `s_awake_until_us`; checking only whether the
+    latter is zero turns a stale timestamp into an infinite radio-scan loop. [env]
+55. **More than the nominal minimum is not necessarily a full reporting tick — and
+    `max_interval` is part of the user-visible cadence.** A no-erase v0.1.15 field
+    flash on 2026-07-28 retained `report_interval_s=30` and continued normal wakes with
+    `first_boot=OFF`; T/RH source reports stopped after their initial sequence while the
+    AI heartbeat advanced. Pressure's stored `measuredValue=986` also had a 3600 s
+    maximum reporting interval, so unchanged pressure had no 30 s heartbeat. Thus the
+    1200 ms delay and one-hour max are not acceptance evidence for a one-shot deep-sleep
+    wake. v0.1.16 uses shared `cycle_reporting_settle_ms(min_interval, guard)` (one
+    additional whole second plus 200 ms: 2200 ms for `min_interval=1`) and derives both
+    device-side max fields from `report_interval_s`. The exact ZBOSS tick mechanism and
+    persistence of the max heartbeat remain hypotheses until the no-erase hardware soak
+    shows fresh source T/RH/P reports on several ordinary wakes. [env]

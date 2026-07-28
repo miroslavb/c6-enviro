@@ -127,18 +127,73 @@ static void go_to_sleep(uint32_t sleep_ms)
     esp_deep_sleep_start();
 }
 
-static bool wait_for_reporting_ready(void)
+static cycle_report_action_t wait_for_reporting_ready(void)
 {
     EventBits_t bits = xEventGroupWaitBits(
         s_events, EVT_REPORTING_READY | EVT_LEFT, pdTRUE, pdFALSE,
         pdMS_TO_TICKS(AWAKE_WINDOW_S * 1000));
     if (bits & EVT_LEFT) {
         ESP_LOGW(TAG, "left network before reporting became ready");
-        return false;
+        return cycle_report_action((bits & EVT_REPORTING_READY) != 0, true);
     }
-    if (bits & EVT_REPORTING_READY) return true;
+    if (bits & EVT_REPORTING_READY) {
+        return cycle_report_action(true, false);
+    }
     ESP_LOGW(TAG, "reporting setup did not become ready inside the awake window");
-    return false;
+    return cycle_report_action(false, false);
+}
+
+static bool wait_for_network(bool cold_boot)
+{
+    const int64_t t_start = esp_timer_get_time();
+
+    for (;;) {
+        EventBits_t bits = xEventGroupWaitBits(
+            s_events, EVT_JOINED | EVT_FIRST_JOIN, pdTRUE, pdFALSE,
+            pdMS_TO_TICKS(1000));
+        if (bits & (EVT_FIRST_JOIN | EVT_JOINED)) {
+            // A firmware flash/power reset preserves zb_storage, so the stack
+            // reports a normal NVRAM restore rather than fresh steering. Z2M
+            // may still be retrying an incomplete interview from the previous
+            // build. Every fresh steering join reopens the window, including a
+            // mid-cycle rejoin; plain restores do so on cold boots only.
+            if (cycle_join_opens_awake_window(
+                    (bits & EVT_FIRST_JOIN) != 0, cold_boot)) {
+                s_awake_until_us = esp_timer_get_time() +
+                                   (int64_t)AWAKE_WINDOW_S * 1000000;
+                if (bits & EVT_FIRST_JOIN) {
+                    ESP_LOGI(TAG, "fresh join — staying awake %d s for the Z2M interview",
+                             AWAKE_WINDOW_S);
+                } else {
+                    ESP_LOGI(TAG,
+                             "cold boot with restored network — staying awake %d s for Z2M re-interview",
+                             AWAKE_WINDOW_S);
+                }
+            }
+            return true;
+        }
+        if (cycle_join_wait_expired(esp_timer_get_time(), t_start,
+                                    CONFIG_ENVIRO_JOIN_TIMEOUT_S,
+                                    s_awake_until_us)) {
+            ESP_LOGW(TAG, "network wait deadline expired (join budget %d s)",
+                     CONFIG_ENVIRO_JOIN_TIMEOUT_S);
+            return false;
+        }
+    }
+}
+
+static bool wait_for_network_and_reporting(bool cold_boot)
+{
+    for (;;) {
+        if (!wait_for_network(cold_boot)) return false;
+        cold_boot = false;
+
+        switch (wait_for_reporting_ready()) {
+        case CYCLE_REPORT_READY:  return true;
+        case CYCLE_REPORT_REJOIN: continue;
+        case CYCLE_REPORT_TIMEOUT:return false;
+        }
+    }
 }
 
 void app_main(void)
@@ -180,47 +235,13 @@ void app_main(void)
     s_events = xEventGroupCreate();
     ESP_ERROR_CHECK(zb_device_start(zb_event_handler, first_boot));
 
-    // 6. Wait for the network (NVRAM restore is fast; steering can take a
-    //    while and only succeeds with permit-join open).
-    const int64_t t_start = esp_timer_get_time();
-    bool joined = false;
-    while (!joined) {
-        EventBits_t bits = xEventGroupWaitBits(
-            s_events, EVT_JOINED | EVT_FIRST_JOIN, pdTRUE, pdFALSE,
-            pdMS_TO_TICKS(1000));
-        if (bits & EVT_FIRST_JOIN) {
-            joined = true;
-            s_awake_until_us = esp_timer_get_time() + (int64_t)AWAKE_WINDOW_S * 1000000;
-            ESP_LOGI(TAG, "first join — staying awake %d s for the Z2M interview",
-                     AWAKE_WINDOW_S);
-        } else if (bits & EVT_JOINED) {
-            joined = true;
-            // A firmware flash/power reset preserves zb_storage, so the stack
-            // reports a normal NVRAM restore rather than fresh steering. Z2M
-            // may still be retrying an incomplete interview from the previous
-            // build; reopen the commissioning window on cold boots only. Timer
-            // deep-sleep wakes remain battery-efficient and go straight back
-            // to the normal short report cycle.
-            if (first_boot) {
-                s_awake_until_us = esp_timer_get_time() +
-                                   (int64_t)AWAKE_WINDOW_S * 1000000;
-                ESP_LOGI(TAG,
-                         "cold boot with restored network — staying awake %d s for Z2M re-interview",
-                         AWAKE_WINDOW_S);
-            }
-        } else if (s_awake_until_us == 0 &&
-                   esp_timer_get_time() - t_start >
-                       (int64_t)CONFIG_ENVIRO_JOIN_TIMEOUT_S * 1000000) {
-            ESP_LOGW(TAG, "no network after %d s — sleeping %d s before retry",
-                     CONFIG_ENVIRO_JOIN_TIMEOUT_S, CONFIG_ENVIRO_RETRY_SLEEP_S);
-            go_to_sleep((uint32_t)CONFIG_ENVIRO_RETRY_SLEEP_S * 1000u);
-        }
-    }
-
-    // The Zigbee task owns reporting setup. On a fresh join or cold boot it
-    // deliberately emits this only after the 60 s no-uplink interview phase;
-    // timer wakes schedule it immediately. Never push attributes before it.
-    if (!wait_for_reporting_ready()) {
+    // 6. Wait for the network and reporting readiness. If the device leaves
+    // during either the quiet phase or reporting settle, steering is already
+    // scheduled by the Zigbee task; stay awake and follow that rejoin instead
+    // of aborting it with deep sleep.
+    if (!wait_for_network_and_reporting(first_boot)) {
+        ESP_LOGW(TAG, "network/reporting unavailable — sleeping %d s before retry",
+                 CONFIG_ENVIRO_RETRY_SLEEP_S);
         go_to_sleep((uint32_t)CONFIG_ENVIRO_RETRY_SLEEP_S * 1000u);
     }
 
@@ -233,16 +254,11 @@ void app_main(void)
             s_events, EVT_FLUSHED | EVT_LEFT, pdTRUE, pdFALSE,
             pdMS_TO_TICKS(CONFIG_ENVIRO_REPORT_FLUSH_MS + 8000));
         if (bits & EVT_LEFT) {
-            // Kicked off the network: steering restarted in zb_device. Give it
-            // the join-timeout budget, then power-protect.
+            // Kicked off the network: steering restarted in zb_device. Reuse
+            // the same join/window/reporting lifecycle as startup so a fresh
+            // association gets its full five-minute commissioning window.
             ESP_LOGW(TAG, "left network mid-cycle — waiting to rejoin");
-            bits = xEventGroupWaitBits(s_events, EVT_JOINED | EVT_FIRST_JOIN,
-                                       pdTRUE, pdFALSE,
-                                       pdMS_TO_TICKS(CONFIG_ENVIRO_JOIN_TIMEOUT_S * 1000));
-            if (!(bits & (EVT_JOINED | EVT_FIRST_JOIN))) {
-                go_to_sleep((uint32_t)CONFIG_ENVIRO_RETRY_SLEEP_S * 1000u);
-            }
-            if (!wait_for_reporting_ready()) {
+            if (!wait_for_network_and_reporting(false)) {
                 go_to_sleep((uint32_t)CONFIG_ENVIRO_RETRY_SLEEP_S * 1000u);
             }
             continue;   // re-push the same measurement after rejoin

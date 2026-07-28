@@ -66,6 +66,47 @@ uint32_t cycle_sleep_ms(uint16_t interval_s, uint32_t awake_ms, uint32_t min_sle
     return sleep_ms;
 }
 
+uint32_t cycle_reporting_settle_ms(uint16_t min_interval_s, uint16_t tick_guard_ms)
+{
+    // Field behavior is consistent with an implementation that combines a strict
+    // `elapsed_seconds > min_interval` check and whole-second time quantization.
+    // Defend against that boundary by clearing the next tick plus a small guard.
+    return ((uint32_t)min_interval_s + 1u) * 1000u + tick_guard_ms;
+}
+
+uint16_t cycle_reporting_max_interval_s(uint16_t report_interval_s, uint16_t min_interval_s)
+{
+    // A max interval is an upper reporting bound, not an opportunity to publish
+    // faster than the configured measurement/report cadence. The caller clamps
+    // user input already; retain this defensive ZCL max>=min guarantee.
+    if (report_interval_s < min_interval_s) return min_interval_s;
+    return report_interval_s;
+}
+
+// ---- Network/reporting lifecycle ------------------------------------------
+
+cycle_report_action_t cycle_report_action(bool ready, bool left)
+{
+    if (left) return CYCLE_REPORT_REJOIN;
+    if (ready) return CYCLE_REPORT_READY;
+    return CYCLE_REPORT_TIMEOUT;
+}
+
+bool cycle_join_opens_awake_window(bool first_join, bool cold_boot)
+{
+    return first_join || cold_boot;
+}
+
+bool cycle_join_wait_expired(int64_t now_us,
+                             int64_t started_us,
+                             uint32_t timeout_s,
+                             int64_t awake_until_us)
+{
+    int64_t deadline_us = started_us + (int64_t)timeout_s * 1000000;
+    if (awake_until_us > deadline_us) deadline_us = awake_until_us;
+    return now_us >= deadline_us;
+}
+
 // ---- Status flags -----------------------------------------------------------
 
 uint16_t cycle_status_flags(const cycle_status_t *st,
