@@ -7,7 +7,7 @@ single Li-ion cell. A **sleepy Zigbee end device** that wakes from deep sleep ev
 BME680 offers plus the battery voltage, reports over **Zigbee2MQTT**, and goes back
 to sleep. Flash it from the browser at **https://c6.miroslav.diy/flash/enviro/**.
 
-Firmware **v0.1.15** uses recovery EUI-64 `0x8efd49fffe1a3d8c`. A full-flash erase
+Firmware **v0.1.16** uses recovery EUI-64 `0x8efd49fffe1a3d8c`. A full-flash erase
 during the v0.1.8 field test destroyed `zb_storage`, while the coordinator retained
 the old EUI's trust-center key. The new local-admin identity isolates this one sensor
 without modifying coordinator NVRAM or any sibling device.
@@ -16,18 +16,16 @@ without modifying coordinator NVRAM or any sibling device.
 to battery power, Z2M bound EP1 Poll Control and delivered queued normal-sleep
 SET/GET for `report_interval_s=30`. Direct readback and later `first_boot=OFF`
 telemetry retained 30 across increasing wake counts. See `docs/LESSONS.md` items
-45–52 for the evidence and operational caveats.
+45–55 for the evidence and operational caveats.
 
-**v0.1.15 reporting-fix candidate:** a physical temperature perturbation advanced
-`wake_count` without an automatic EP1 update, while a direct ZCL read exposed a changed
-temperature in the device attribute store. The BME680 and measurement path were alive;
-the first push after each deep-sleep reboot occurred inside ZBOSS's 1 s reporting
-minimum. v0.1.15 waits 1.2 s after registering reporting slots before the first push.
-Independent pre-commit review also closed both adjacent recovery paths: a `LEAVE`
-during reporting setup now stays awake for steering instead of sleeping, and a fresh
-mid-cycle rejoin reopens the full five-minute commissioning window. Failed rejoin is
-still battery-bounded by the later of that window and a fresh 60-second join deadline.
-Software gates do not replace the pending no-erase hardware flash and long soak.
+**v0.1.16 normal-wake reporting candidate:** a no-erase v0.1.15 field flash
+kept 30 s timer wakes and `first_boot=OFF`, but standard EP1 reports stopped
+after the initially active reporting sequence. The BME680 and AI heartbeat
+path remained alive. Two safeguards are now paired: the sole normal-wake push
+waits through a full extra 1 s reporting tick plus a 200 ms scheduler guard
+(**2.2 s**), and each device-side reporting slot uses `report_interval_s` as
+its maximum heartbeat rather than a fixed 3600 s. The no-erase hardware soak,
+including source T/RH/P timestamps, remains the acceptance gate.
 
 ```
  ☀ solar ─► Waveshare Solar     ┌──────────── ESP32-C6 Super Mini ────────────┐
@@ -75,13 +73,14 @@ bash scripts/build-firmware.sh          # → web/firmware/*.bin + manifest.json
 #    Routine update: DO NOT erase whole flash; preserve zb_storage.
 
 # 4. Pair: install z2m/ converter → restart Z2M → Permit join → reset the board.
-#    Expected v0.1.15 IEEE: 0x8efd49fffe1a3d8c.
+#    Expected v0.1.16 IEEE: 0x8efd49fffe1a3d8c.
 #    It stays awake 5 minutes after a fresh join or firmware-update cold boot.
-#    v0.1.15 turns continuous RX on only inside that bounded interview window;
+#    v0.1.16 turns continuous RX on only inside that bounded interview window;
 #    the first 60 s also use 200 ms parent polls for ZDO/security traffic. Every
 #    normal timer wake sends a standard Poll Control CheckIn, then reserves a
-#    1 s 200 ms-poll slot to flush queued Z2M controls, registers reporting,
-#    waits a 1.2 s settle interval, and only then pushes telemetry.
+#    1 s 200 ms-poll slot to flush queued Z2M controls, registers reporting with a
+#    maximum heartbeat equal to `report_interval_s`, waits a 2.2 s whole-tick-plus-
+#    guard settle, and only then pushes telemetry.
 ```
 
 Full setup: [`docs/INTEGRATION.md`](docs/INTEGRATION.md) · design rationale:
@@ -97,4 +96,5 @@ desolder it for true µA sleep. Numbers and math: [`docs/WIRING.md`](docs/WIRING
 
 > **Current field unit:** its battery-divider midpoint is not connected to GPIO2.
 > Treat `vbat_mv`, `battery`, `voltage`, and `battery_low` as floating/invalid until
-> that wire is installed; they were excluded from the v0.1.15 root-cause analysis.
+> the wiring is installed; they were excluded from the v0.1.16 normal-wake
+> reporting diagnosis.

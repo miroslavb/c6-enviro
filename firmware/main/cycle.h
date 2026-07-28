@@ -38,6 +38,16 @@ uint16_t cycle_clamp_interval_s(uint32_t requested_s, uint16_t min_s, uint16_t m
 // sleep *plus* the awake time). Never returns less than `min_sleep_ms`.
 uint32_t cycle_sleep_ms(uint16_t interval_s, uint32_t awake_ms, uint32_t min_sleep_ms);
 
+// Delay before the only attribute push of a normal wake. Field behavior is
+// consistent with a whole-second reporting clock plus a strict threshold; wait
+// through the next full tick plus a bounded scheduler margin.
+uint32_t cycle_reporting_settle_ms(uint16_t min_interval_s, uint16_t tick_guard_ms);
+
+// Device-side reporting only gets a chance to run while the ZED is awake. Its
+// maximum-period heartbeat is the configured measurement/report cadence itself;
+// preserve the ZCL max>=min rule without reporting faster than the user asked.
+uint16_t cycle_reporting_max_interval_s(uint16_t report_interval_s, uint16_t min_interval_s);
+
 // ---- Network/reporting lifecycle ------------------------------------------
 
 typedef enum {

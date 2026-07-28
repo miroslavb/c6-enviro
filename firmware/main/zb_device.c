@@ -62,12 +62,12 @@ static const char *TAG = "zb_device";
 #define INTERVIEW_QUIET_MS           60000u
 #define INTERVIEW_POLL_MS            200u
 #define NORMAL_CONTROL_POLL_WINDOW_MS 1000u
-// ZBOSS accepts min_interval=1 s for these reporting slots, but a normal timer
-// wake used to update the attributes immediately after registration. That first
-// change remained below the minimum interval and the MCU slept before a second
-// update; only the long cold-boot window ever produced EP1 reports. Let the
-// reporting engine cross the minimum interval before releasing main's first push.
-#define REPORTING_SETTLE_MS          1200u
+// v0.1.15 field behavior showed that a normal deep-sleep wake's one push can
+// remain unreported after a 1.2 s delay. Guard the plausible whole-tick boundary
+// by releasing only beyond the next full reporting tick, not merely 1.2 s after
+// registration; later cold-boot pushes already showed why that distinction matters.
+#define REPORTING_MIN_INTERVAL_S     1u
+#define REPORTING_TICK_GUARD_MS      200u
 
 // v0.1.9 recovery identity. The browser flash erased the device's Zigbee NVRAM,
 // but the coordinator retained the old EUI's trust-center link key. Use a unique
@@ -368,19 +368,21 @@ static void setup_self_reporting(void)
         //    min_interval = 0 with ESP_ERR_INVALID_ARG (field 2026-07-23: every
         //    slot on every endpoint failed registration; the router builds in
         //    the sibling projects used min 5..30 and never tripped this). 1 s
-        //    still fits comfortably inside the 2 s report-flush window.
-        //    max = heartbeat backstop while awake (the device usually sleeps
-        //    long before it fires).
+        //    still fits comfortably inside the 2 s report-flush window. The max
+        //    tracks the persisted measurement/report cadence, requesting a bounded
+        //    heartbeat even for an unchanged standard value (notably pressure).
         esp_zb_zcl_reporting_info_t info = {0};
         info.direction    = ESP_ZB_ZCL_REPORT_DIRECTION_SEND;
         info.ep           = s->ep;
         info.cluster_id   = s->cluster;
         info.cluster_role = ESP_ZB_ZCL_CLUSTER_SERVER_ROLE;
         info.attr_id      = s->attr;
-        info.u.send_info.min_interval     = 1;
-        info.u.send_info.max_interval     = 3600;
-        info.u.send_info.def_min_interval = 1;
-        info.u.send_info.def_max_interval = 3600;
+        info.u.send_info.min_interval     = REPORTING_MIN_INTERVAL_S;
+        info.u.send_info.max_interval     =
+            cycle_reporting_max_interval_s(g_config.report_interval_s, REPORTING_MIN_INTERVAL_S);
+        info.u.send_info.def_min_interval = REPORTING_MIN_INTERVAL_S;
+        info.u.send_info.def_max_interval =
+            cycle_reporting_max_interval_s(g_config.report_interval_s, REPORTING_MIN_INTERVAL_S);
         if (s->analog) info.u.send_info.delta.f32 = 0.0f;  // any change
         else           info.u.send_info.delta.u16 = 0;
         info.dst.short_addr = 0x0000;                    // coordinator
@@ -409,7 +411,9 @@ static void setup_self_reporting_cb(uint8_t param)
     // parent-poll interval before device-side bind/report traffic begins.
     ezb_nwk_set_keepalive_interval(ED_KEEP_ALIVE_MS);
     setup_self_reporting();
-    esp_zb_scheduler_alarm(reporting_ready_cb, 0, REPORTING_SETTLE_MS);
+    esp_zb_scheduler_alarm(reporting_ready_cb, 0,
+                           cycle_reporting_settle_ms(REPORTING_MIN_INTERVAL_S,
+                                                     REPORTING_TICK_GUARD_MS));
 }
 
 static void schedule_self_reporting(bool quiet)

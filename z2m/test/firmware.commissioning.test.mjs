@@ -130,9 +130,11 @@ test("bounded fast parent polling serves the quiet interview phase", () => {
     "quiet phase does not accelerate sleepy parent polling");
 });
 
-test("first measurement push waits until the reporting minimum interval has elapsed", () => {
-  assert.match(zbSource, /#define\s+REPORTING_SETTLE_MS\s+(?:100[1-9]|10[1-9]\d|1[1-9]\d{2}|[2-9]\d{3,})u?/,
-    "reporting setup needs a post-registration settle longer than its one-second minimum interval");
+test("sole normal-wake push clears a full reporting tick plus scheduler guard", () => {
+  assert.match(zbSource, /#define\s+REPORTING_MIN_INTERVAL_S\s+1u?/,
+    "this ZED's reporting minimum must stay explicit and shared with its settle calculation");
+  assert.match(zbSource, /#define\s+REPORTING_TICK_GUARD_MS\s+200u?/,
+    "normal wake needs a positive post-tick scheduler guard");
 
   const ready = functionBody(
     zbSource,
@@ -148,16 +150,32 @@ test("first measurement push waits until the reporting minimum interval has elap
     "static void schedule_self_reporting(bool quiet)",
   );
   const configure = setup.indexOf("setup_self_reporting();");
-  const delayedReady = setup.indexOf(
-    "esp_zb_scheduler_alarm(reporting_ready_cb, 0, REPORTING_SETTLE_MS);",
-  );
+  const delayedReady = setup.indexOf("cycle_reporting_settle_ms(");
   assert.notEqual(configure, -1, "device-side reporting setup is missing");
-  assert.notEqual(delayedReady, -1,
-    "normal wakes still push attributes immediately after registering reporting slots");
+  assert.notEqual(delayedReady, -1, "normal wake has no derived post-registration settle");
   assert.ok(configure < delayedReady,
-    "reporting slots must be registered before the post-setup settle begins");
+    "reporting slots must be registered before the whole-tick settle begins");
+  assert.match(setup,
+    /esp_zb_scheduler_alarm\s*\(\s*reporting_ready_cb\s*,\s*0\s*,\s*cycle_reporting_settle_ms\s*\(\s*REPORTING_MIN_INTERVAL_S\s*,\s*REPORTING_TICK_GUARD_MS\s*\)\s*\)/,
+    "normal wake must wait through a whole extra reporting tick instead of relying on a 1.2 s literal");
+  assert.doesNotMatch(setup, /REPORTING_SETTLE_MS/,
+    "the fragile fixed 1.2 s settle must not return");
   assert.doesNotMatch(setup, /emit\s*\(\s*ZB_EVT_REPORTING_READY\s*\)/,
     "REPORTING_READY must not be emitted synchronously inside reporting setup");
+
+  const slots = functionBody(
+    zbSource,
+    "static void setup_self_reporting(void)",
+    "static void setup_self_reporting_cb(uint8_t param)",
+  );
+  assert.match(slots,
+    /max_interval\s*=\s*cycle_reporting_max_interval_s\s*\(\s*g_config\.report_interval_s\s*,\s*REPORTING_MIN_INTERVAL_S\s*\)/,
+    "the ZCL maximum-report heartbeat must follow the configured deep-sleep cadence");
+  assert.match(slots,
+    /def_max_interval\s*=\s*cycle_reporting_max_interval_s\s*\(\s*g_config\.report_interval_s\s*,\s*REPORTING_MIN_INTERVAL_S\s*\)/,
+    "default max interval must match the active cadence heartbeat");
+  assert.doesNotMatch(slots, /max_interval\s*=\s*3600/,
+    "a one-hour static heartbeat cannot satisfy a 3–3600s sleepy cadence");
 });
 
 test("normal timer wakes reserve a bounded fast-poll slot for queued controls", () => {
