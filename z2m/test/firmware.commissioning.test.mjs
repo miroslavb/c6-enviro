@@ -276,6 +276,8 @@ test("stale reporting alarms cannot escape across leave/rejoin", () => {
     "LEAVE does not invalidate the delayed reporting-setup callback");
   assert.match(leave, /esp_zb_scheduler_alarm_cancel\s*\(\s*reporting_ready_cb\s*,\s*0\s*\)/,
     "LEAVE does not invalidate the delayed reporting-ready callback");
+  assert.match(leave, /esp_zb_scheduler_alarm_cancel\s*\(\s*flush_done_cb\s*,\s*0\s*\)/,
+    "LEAVE does not invalidate a pending post-push flush callback");
 });
 
 test("LEFT wins over REPORTING_READY when both event bits are present", () => {

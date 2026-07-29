@@ -332,3 +332,9 @@ Below: the ones that shaped this firmware, plus everything new.
     subtracts it from deep sleep, so the persisted external cadence is unchanged.
     It is a production candidate until a no-erase normal-wake source/HA soak proves
     unchanged T/RH/P transitions. [env]
+58. **A `LEAVE` invalidates the post-push flush as well as setup/READY.** The
+    deferred `flush_done_cb` emits `ZB_EVT_REPORT_FLUSHED`, so after a v0.1.18
+    normal wake it can otherwise survive its 3.2 s window into a rejoin and
+    let main consume a stale completion before the new reporting lifecycle is
+    ready. Cancel setup, ready, and flush callbacks together on `LEAVE`; cover
+    that contract in the commissioning source test. [env]

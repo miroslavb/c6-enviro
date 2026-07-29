@@ -71,7 +71,10 @@ menu "C6 Enviro Sensor"
             help
                 The ZBOSS reporting engine transmits the changed attributes
                 within this window; then the device deep-sleeps. Lower = less
-                energy per cycle but risks cutting off an unsent report.
+                energy per cycle but risks cutting off an unsent report. For
+                an ordinary timer wake, the final measurement mirror may
+                extend the effective post-push window to a full wake-local
+                heartbeat deadline; this configured value remains its floor.
 
         config ENVIRO_MIN_SLEEP_MS
             int "Minimum deep-sleep duration, ms"

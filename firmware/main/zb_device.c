@@ -780,8 +780,12 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             ESP_LOGW(TAG, "left the network — restarting steering");
             s_joined = false;
             s_wake_local_heartbeat = false;
+            // Invalidate every callback from the old network lifecycle. In
+            // particular, a pending extended post-push flush must not release
+            // main's cycle loop while the device is rejoining.
             esp_zb_scheduler_alarm_cancel(setup_self_reporting_cb, 0);
             esp_zb_scheduler_alarm_cancel(reporting_ready_cb, 0);
+            esp_zb_scheduler_alarm_cancel(flush_done_cb, 0);
             schedule_steering_retry(1000);
             emit(ZB_EVT_LEFT);
         } else {
