@@ -90,7 +90,7 @@ a half-interviewed entry: that creates overlapping interview attempts and
 network-address churn. Acceptance is the Z2M database showing `interviewCompleted:true`,
 `interviewState:"SUCCESSFUL"`, and `epList:[1,2,3,4,5]`.
 
-### v0.1.18 failure and v0.1.19 normal-wake reporting repair
+### v0.1.18 failure and v0.1.19 normal-wake reporting acceptance
 
 Device-side reporting slots use a one-second minimum interval. v0.1.14 configured
 those slots and immediately pushed T/RH/P; a normal timer wake then slept before a
@@ -122,10 +122,13 @@ configuration response from v0.1.18 returned `minRepIntval=5` and `maxRepIntval=
 in esp-zigbee-lib, `max=0` disables periodic reporting. v0.1.19 keeps the SDK-owned
 handle returned by `esp_zb_zcl_find_reporting_info()` before calling the compat
 `update_reporting_info()` wrapper, so it patches the existing device record rather
-than leaving its default. Hardware acceptance must first read back the intended
-normal-wake record, then observe multiple source/HA T/RH/P reports on
-`first_boot=OFF` wakes. Aggregate MQTT cache, unchanged numerical state, or cold-boot
-updates alone do not pass.
+than leaving its default. The 2026-07-29 no-erase field capture then observed 31 raw,
+device-originated EP1 `msPressureMeasurement` `attributeReport`s across three ordinary
+sleepy wakes, including unchanged Pressure. HA Pressure `last_reported` remained stale,
+which demonstrates that this Discovery/HA state layer is not a wire-level oracle for an
+unchanged numeric value. Hardware acceptance must read back the intended normal-wake
+record where timing permits and then observe raw source reports on `first_boot=OFF`
+wakes; aggregate MQTT and HA state are corroboration only.
 
 If the device leaves while quiet/reporting setup is pending, v0.1.18 keeps the MCU awake
 and follows the already-scheduled steering retry rather than sleeping. A successful

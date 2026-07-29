@@ -141,8 +141,11 @@ Direct, read-only reporting configuration made the remaining defect concrete: v0
 Pressure had the SDK default `min=5/max=0`, where `max=0` disables periodic reports.
 The compat wrapper needs the opaque `.info` handle discovered by
 `esp_zb_zcl_find_reporting_info()` to modify an existing record. v0.1.19 preserves
-that handle before applying its interval/delta update. The repair remains a candidate
-until a no-erase field flash proves the live readback and unchanged-Pressure heartbeat.
+that handle before applying its interval/delta update. The no-erase field capture on
+2026-07-29 passed at the Zigbee protocol layer: three ordinary sleepy wakes contained
+31 device-originated EP1 `msPressureMeasurement` `attributeReport`s, including unchanged
+Pressure. HA `last_reported` remained stale, so it is not an acceptance oracle for
+unchanged numeric state on this Discovery path; raw source reports are authoritative.
 
 Independent review found two recovery consequences around that wait. The main loop now
 classifies `READY`, `REJOIN`, and `TIMEOUT` explicitly: `LEFT` outranks stale `READY`

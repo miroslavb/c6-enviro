@@ -16,17 +16,19 @@ without modifying coordinator NVRAM or any sibling device.
 to battery power, Z2M bound EP1 Poll Control and delivered queued normal-sleep
 SET/GET for `report_interval_s=30`. Direct readback and later `first_boot=OFF`
 telemetry retained 30 across increasing wake counts. See `docs/LESSONS.md` items
-45–57 for the evidence and operational caveats.
+45–63 for the evidence and operational caveats.
 
-**v0.1.19 normal-wake reporting candidate:** direct readback falsified v0.1.18's
-timing-only explanation. Its live Pressure record was the SDK default
-`min=5 s/max=0`, and `max=0` disables periodic reporting; unchanged Pressure
-therefore had no source heartbeat. v0.1.19 keeps v0.1.18's safe prime/final
-3.2-second flush, but also retains the opaque SDK reporting-record handle while
-patching each T/RH/P interval to `min=1 s` and wake-local `max=2 s`.
-Interval-compensated deep sleep still preserves the external
-`report_interval_s` cadence. A no-erase direct-readback plus source/HA T/RH/P
-soak remains the acceptance gate.
+**v0.1.19 normal-wake reporting acceptance passed 2026-07-29:** direct readback
+falsified v0.1.18's timing-only explanation. Its live Pressure record was the SDK
+default `min=5 s/max=0`, and `max=0` disables periodic reporting. v0.1.19 keeps
+v0.1.18's safe prime/final 3.2-second flush and retains the opaque SDK
+reporting-record handle while patching each T/RH/P interval. A no-erase raw
+ZNP/ZCL capture then recorded 31 device-originated EP1 `msPressureMeasurement`
+`attributeReport`s across three normal sleepy wakes, including unchanged Pressure.
+Home Assistant Pressure `last_reported` did not advance because this Z2M Discovery
+surface lacks `force_update`; it is not a wire-level report oracle. Accept unchanged
+Pressure by raw source-report evidence, while keeping HA/MQTT as corroboration.
+Interval-compensated deep sleep still preserves `report_interval_s` cadence.
 
 ```
  ☀ solar ─► Waveshare Solar     ┌──────────── ESP32-C6 Super Mini ────────────┐

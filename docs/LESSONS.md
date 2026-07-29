@@ -349,3 +349,30 @@ Below: the ones that shaped this firmware, plus everything new.
     while patching the full interval/delta record. This is a source-level fix;
     direct post-flash readback plus no-erase unchanged-Pressure acceptance are
     still required. [env]
+60. **For an unchanged value, HA `last_reported` is not a wire-level report
+    counter.** The v0.1.19 no-erase capture on 2026-07-29 recorded **31
+    device-originated** EP1 `msPressureMeasurement` `attributeReport`s across three
+    normal sleepy wakes, including raw `measuredValue:988`; Z2M decoded them. HA
+    Pressure `last_reported` nevertheless remained old. The retained MQTT Discovery
+    config has no `force_update`, so a static HA state cannot reject a proven raw source
+    report. Accept unchanged measurement transmission from the raw ZCL evidence; use HA
+    timestamps only as supporting observability. If a dashboard needs a heartbeat, add a
+    separate liveness/last-report entity rather than fabricating sensor jitter. [env]
+61. **`bridge/logging` can hide the very raw frame being sought.** In Z2M 2.12.1,
+    `advanced.log_debug_to_mqtt_frontend=false` suppresses debug records in the MQTT
+    frontend even if a debug level is requested. Before a temporary capture, snapshot
+    both effective `advanced.log_level` and `advanced.log_debug_to_mqtt_frontend` from
+    `bridge/info`, temporarily enable both necessary values through
+    `bridge/request/options`, require its successful response, and restore/verify both
+    settings in cleanup. A zero-candidate capture means no source proof was captured,
+    not that the device emitted nothing. [env]
+62. **Use direct coordinator/container debug when frontend transport is ambiguous.**
+    Filter a bounded capture by IEEE/network address and cluster, retain only the
+    evidence needed for the claim, then delete the capture. Do not dump broad add-on
+    configuration or log payloads: they can include MQTT and Zigbee network secrets.
+    Add-on options files also need not expose effective runtime defaults. [env]
+63. **A sleepy `Read Reporting Configuration` timeout is a timing signal, not a
+    negative configuration verdict.** The read-only Z2M request can miss the bounded
+    receive window. Retry only in a legitimate awake window and use a successful
+    response as direct device evidence; do not erase, re-pair, or repeat a proven fix
+    merely because the query timed out. [env]
