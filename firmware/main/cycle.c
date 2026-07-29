@@ -85,10 +85,25 @@ uint16_t cycle_reporting_max_interval_s(uint16_t report_interval_s, uint16_t min
 
 uint16_t cycle_reporting_wake_heartbeat_max_interval_s(uint16_t min_interval_s)
 {
-    // The reporting-ready callback waits (min + 1) whole seconds plus a guard.
-    // Use that unguarded integer deadline so an unchanged value is due shortly
-    // before READY, while the following flush still keeps the sleepy radio awake.
+    // A wake-local max lets a reboot-per-wake ZED create one unchanged-value
+    // heartbeat opportunity without changing the external timer cadence. The
+    // post-push flush helper carries the strict expiry through the next tick.
     return (uint16_t)(min_interval_s + 1u);
+}
+
+uint32_t cycle_reporting_post_push_flush_ms(uint32_t configured_flush_ms,
+                                            bool wake_local_heartbeat,
+                                            uint16_t min_interval_s,
+                                            uint16_t tick_guard_ms)
+{
+    if (!wake_local_heartbeat) return configured_flush_ms;
+
+    const uint16_t max_interval_s =
+        cycle_reporting_wake_heartbeat_max_interval_s(min_interval_s);
+    const uint32_t heartbeat_flush_ms =
+        ((uint32_t)max_interval_s + 1u) * 1000u + tick_guard_ms;
+    return configured_flush_ms > heartbeat_flush_ms
+        ? configured_flush_ms : heartbeat_flush_ms;
 }
 
 // ---- Network/reporting lifecycle ------------------------------------------

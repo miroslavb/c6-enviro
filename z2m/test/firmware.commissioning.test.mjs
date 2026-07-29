@@ -186,6 +186,20 @@ test("sole normal-wake push clears a full reporting tick plus scheduler guard", 
     "a one-hour static heartbeat cannot satisfy a 3–3600s sleepy cadence");
 });
 
+test("normal wake retains the radio through the strict heartbeat deadline after its final push", () => {
+  const push = functionBody(
+    zbSource,
+    "static void push_cb(uint8_t param)",
+    "void zb_device_push_measurement(void)",
+  );
+  assert.match(push,
+    /const\s+uint32_t\s+flush_ms\s*=\s*cycle_reporting_post_push_flush_ms\s*\(\s*CONFIG_ENVIRO_REPORT_FLUSH_MS\s*,\s*s_wake_local_heartbeat\s*,\s*REPORTING_MIN_INTERVAL_S\s*,\s*REPORTING_TICK_GUARD_MS\s*\)/,
+    "normal wake must derive its post-push flush from the wake-local heartbeat deadline");
+  assert.match(push,
+    /esp_zb_scheduler_alarm\s*\(\s*flush_done_cb\s*,\s*0\s*,\s*flush_ms\s*\)/,
+    "flush completion must wait for the derived post-push interval");
+});
+
 test("normal timer wakes reserve a bounded fast-poll slot for queued controls", () => {
   assert.match(zbSource, /#define\s+NORMAL_CONTROL_POLL_WINDOW_MS\s+1000u?/,
     "normal deep-sleep wakes need a one-second control receive budget");

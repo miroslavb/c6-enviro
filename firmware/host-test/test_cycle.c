@@ -79,6 +79,10 @@ extern uint32_t cycle_reporting_settle_ms(uint16_t min_interval_s,
 extern uint16_t cycle_reporting_max_interval_s(uint16_t report_interval_s,
                                                 uint16_t min_interval_s);
 extern uint16_t cycle_reporting_wake_heartbeat_max_interval_s(uint16_t min_interval_s);
+extern uint32_t cycle_reporting_post_push_flush_ms(uint32_t configured_flush_ms,
+                                                    bool wake_local_heartbeat,
+                                                    uint16_t min_interval_s,
+                                                    uint16_t tick_guard_ms);
 
 static void test_reporting_settle_guard(void)
 {
@@ -105,12 +109,25 @@ static void test_reporting_max_interval(void)
 static void test_reporting_wake_heartbeat_max_interval(void)
 {
     // A deep-sleep reboot recreates reporting state each wake. The configured
-    // 30 s max can never expire in its ~5 s awake window; force one stack-owned
-    // heartbeat deadline before the 2.2 s reporting-ready release instead.
+    // 30 s max can never expire in its short awake window; make one stack-owned
+    // heartbeat deadline local to the wake and preserve it after the final push.
     CHECK(cycle_reporting_wake_heartbeat_max_interval_s(1) == 2,
           "1s report minimum needs a 2s wake-local heartbeat deadline");
     CHECK(cycle_reporting_wake_heartbeat_max_interval_s(3) == 4,
           "wake-local heartbeat stays one full tick beyond larger minima");
+}
+
+static void test_reporting_post_push_flush(void)
+{
+    // The last mirror/push can restart reporting eligibility. For a wake-local
+    // max=2s, allow a strict whole-second clock to clear the *following* tick
+    // plus its scheduler guard before ending the sleepy radio window.
+    CHECK(cycle_reporting_post_push_flush_ms(2000, true, 1, 200) == 3200,
+          "2s wake-local max needs 3.2s after the final push");
+    CHECK(cycle_reporting_post_push_flush_ms(4000, true, 1, 200) == 4000,
+          "do not shorten an explicitly longer configured flush");
+    CHECK(cycle_reporting_post_push_flush_ms(2000, false, 1, 200) == 2000,
+          "cold/commissioning reporting keeps its configured flush");
 }
 
 static void test_reporting_wait_action(void)
@@ -186,6 +203,7 @@ int main(void)
     test_reporting_settle_guard();
     test_reporting_max_interval();
     test_reporting_wake_heartbeat_max_interval();
+    test_reporting_post_push_flush();
     test_reporting_wait_action();
     test_join_awake_window();
     test_join_wait_deadline();
