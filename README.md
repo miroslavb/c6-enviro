@@ -70,6 +70,8 @@ make -C firmware/host-test && node contract/contract.test.mjs && (cd z2m && npm 
 
 # 2. Firmware (Docker, reproducible)
 bash scripts/build-firmware.sh          # → web/firmware/*.bin + manifest.json
+# Release metadata is source-pinned: a clean rebuild must be byte-identical.
+# When changing FW_VERSION, update the paired sdkconfig project version and run tests.
 
 # 3. Flash from the browser
 #    serve web/ behind HTTPS → https://c6.miroslav.diy/flash/enviro/

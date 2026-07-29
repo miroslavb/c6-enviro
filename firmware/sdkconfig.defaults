@@ -59,5 +59,15 @@ CONFIG_FREERTOS_HZ=1000
 # and the console is only attached on the bench.
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 
+# ---- Reproducible release artifacts ------------------------------------------
+# ESP-IDF otherwise embeds the build wall-clock and auto-derived `git describe`
+# (including its `-dirty` suffix) into the bootloader/app descriptors. Pin the
+# human release version to version.h and remove the wall-clock so two clean builds
+# of the same source produce the same flash images.
+CONFIG_APP_REPRODUCIBLE_BUILD=y
+# CONFIG_APP_COMPILE_TIME_DATE is not set
+CONFIG_APP_PROJECT_VER_FROM_CONFIG=y
+CONFIG_APP_PROJECT_VER="0.1.19"
+
 # ---- Newlib -----------------------------------------------------------------
 CONFIG_NEWLIB_NANO_FORMAT=n

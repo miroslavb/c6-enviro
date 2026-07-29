@@ -15,6 +15,14 @@ const ROOT = join(HERE, "..", "..");
 const zbSource = readFileSync(join(ROOT, "firmware/main/zb_device.c"), "utf8");
 const zbHeader = readFileSync(join(ROOT, "firmware/main/zb_device.h"), "utf8");
 const mainSource = readFileSync(join(ROOT, "firmware/main/main.c"), "utf8");
+const versionHeader = readFileSync(join(ROOT, "firmware/main/version.h"), "utf8");
+const sdkconfigDefaults = readFileSync(join(ROOT, "firmware/sdkconfig.defaults"), "utf8");
+
+function releaseVersion() {
+  const match = versionHeader.match(/FW_VERSION\s+"(\d+\.\d+\.\d+)"/);
+  assert.ok(match, "firmware/main/version.h must declare FW_VERSION");
+  return match[1];
+}
 
 function functionBody(source, signature, nextSignature) {
   const start = source.indexOf(signature);
@@ -23,6 +31,18 @@ function functionBody(source, signature, nextSignature) {
   assert.notEqual(end, -1, `${nextSignature} not found after ${signature}`);
   return source.slice(start, end);
 }
+
+test("release artifact metadata is reproducible and independent of git dirty state", () => {
+  const version = releaseVersion();
+  assert.match(sdkconfigDefaults, /^CONFIG_APP_REPRODUCIBLE_BUILD=y$/m,
+    "ESP-IDF reproducible build mode must be enabled");
+  assert.match(sdkconfigDefaults, /^# CONFIG_APP_COMPILE_TIME_DATE is not set$/m,
+    "compile-time date must be excluded from release artifacts");
+  assert.match(sdkconfigDefaults, /^CONFIG_APP_PROJECT_VER_FROM_CONFIG=y$/m,
+    "artifact metadata must not inherit git describe/dirty state");
+  assert.match(sdkconfigDefaults, new RegExp(`^CONFIG_APP_PROJECT_VER="${version}"$`, "m"),
+    "Kconfig project version must match firmware/main/version.h");
+});
 
 test("solar ZED is sleepy by default and opens RX only for a bounded interview window", () => {
   const task = functionBody(zbSource, "static void zb_task(void *arg)", "esp_err_t zb_device_start(");

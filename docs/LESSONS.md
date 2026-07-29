@@ -376,3 +376,13 @@ Below: the ones that shaped this firmware, plus everything new.
     receive window. Retry only in a legitimate awake window and use a successful
     response as direct device evidence; do not erase, re-pair, or repeat a proven fix
     merely because the query timed out. [env]
+64. **A pinned toolchain alone does not make ESP-IDF flash artifacts reproducible.**
+    The prior v0.1.19 rebuild changed both browser binaries without a firmware-source
+    change: ESP-IDF embedded the build wall-clock and auto-derived `git describe`
+    (`<commit>-dirty`) in the bootloader/app metadata; the resulting ELF/image hashes
+    then changed as derivatives. The fix is source-controlled `sdkconfig.defaults`:
+    `CONFIG_APP_REPRODUCIBLE_BUILD=y`, no compile-time date, and
+    `CONFIG_APP_PROJECT_VER_FROM_CONFIG=y` with the same semantic version as
+    `firmware/main/version.h`. A clean-build B→C comparison on 2026-07-29 was
+    byte-identical for bootloader, app, and partition table; normal build output must
+    retain that property before binaries are committed. [env]
