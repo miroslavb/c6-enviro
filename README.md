@@ -7,7 +7,7 @@ single Li-ion cell. A **sleepy Zigbee end device** that wakes from deep sleep ev
 BME680 offers plus the battery voltage, reports over **Zigbee2MQTT**, and goes back
 to sleep. Flash it from the browser at **https://c6.miroslav.diy/flash/enviro/**.
 
-Firmware **v0.1.18** uses recovery EUI-64 `0x8efd49fffe1a3d8c`. A full-flash erase
+Firmware **v0.1.19** uses recovery EUI-64 `0x8efd49fffe1a3d8c`. A full-flash erase
 during the v0.1.8 field test destroyed `zb_storage`, while the coordinator retained
 the old EUI's trust-center key. The new local-admin identity isolates this one sensor
 without modifying coordinator NVRAM or any sibling device.
@@ -18,17 +18,15 @@ SET/GET for `report_interval_s=30`. Direct readback and later `first_boot=OFF`
 telemetry retained 30 across increasing wake counts. See `docs/LESSONS.md` items
 45–57 for the evidence and operational caveats.
 
-**v0.1.18 normal-wake reporting candidate:** v0.1.17's no-erase field soak
-retained `report_interval_s=30` and advancing timer wakes, but it **failed** to
-produce a standard source heartbeat for unchanged T/RH/P: Pressure advanced only
-when its rounded value changed. The former design waited 2.2 s after slot
-registration, then performed the final attribute mirror and ended its radio flush
-2.0 s later. For a strict whole-second `elapsed > max_interval` engine, a normal
-wake-local `max=2 s` needs a **3.2-second window after that final mirror**.
-v0.1.18 keeps prime-before-register and the 2-second wake-local maximum, but
-extends only the ordinary-wake post-push flush to `max(configured_flush, 3.2 s)`.
-The interval-compensated sleep budget preserves the external `report_interval_s`
-cadence; a no-erase source/HA T/RH/P soak remains the acceptance gate.
+**v0.1.19 normal-wake reporting candidate:** direct readback falsified v0.1.18's
+timing-only explanation. Its live Pressure record was the SDK default
+`min=5 s/max=0`, and `max=0` disables periodic reporting; unchanged Pressure
+therefore had no source heartbeat. v0.1.19 keeps v0.1.18's safe prime/final
+3.2-second flush, but also retains the opaque SDK reporting-record handle while
+patching each T/RH/P interval to `min=1 s` and wake-local `max=2 s`.
+Interval-compensated deep sleep still preserves the external
+`report_interval_s` cadence. A no-erase direct-readback plus source/HA T/RH/P
+soak remains the acceptance gate.
 
 ```
  ☀ solar ─► Waveshare Solar     ┌──────────── ESP32-C6 Super Mini ────────────┐
@@ -76,9 +74,9 @@ bash scripts/build-firmware.sh          # → web/firmware/*.bin + manifest.json
 #    Routine update: DO NOT erase whole flash; preserve zb_storage.
 
 # 4. Pair: install z2m/ converter → restart Z2M → Permit join → reset the board.
-#    Expected v0.1.18 IEEE: 0x8efd49fffe1a3d8c.
+#    Expected v0.1.19 IEEE: 0x8efd49fffe1a3d8c.
 #    It stays awake 5 minutes after a fresh join or firmware-update cold boot.
-#    v0.1.18 turns continuous RX on only inside that bounded interview window;
+#    v0.1.19 turns continuous RX on only inside that bounded interview window;
 #    the first 60 s also use 200 ms parent polls for ZDO/security traffic. Every
 #    normal timer wake sends a standard Poll Control CheckIn, then reserves a
 #    1 s 200 ms-poll slot to flush queued Z2M controls, primes the measured ZCL

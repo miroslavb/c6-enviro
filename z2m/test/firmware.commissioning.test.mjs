@@ -186,6 +186,26 @@ test("sole normal-wake push clears a full reporting tick plus scheduler guard", 
     "a one-hour static heartbeat cannot satisfy a 3–3600s sleepy cadence");
 });
 
+test("reporting updates retain the SDK-owned record handle", () => {
+  const slots = functionBody(
+    zbSource,
+    "static void setup_self_reporting(bool wake_local_heartbeat)",
+    "static void reporting_ready_cb(uint8_t param)",
+  );
+  assert.match(slots,
+    /esp_zb_zcl_attr_location_info_t\s+attr_location\s*=\s*\{\s*\.endpoint_id\s*=\s*s->ep\s*,\s*\.cluster_id\s*=\s*s->cluster\s*,\s*\.cluster_role\s*=\s*ESP_ZB_ZCL_CLUSTER_SERVER_ROLE\s*,\s*\.manuf_code\s*=\s*0\s*,\s*\.attr_id\s*=\s*s->attr\s*,?\s*\}/s,
+    "reporting lookup must use the full standard-attribute location");
+  assert.match(slots,
+    /esp_zb_zcl_reporting_info_t\s*\*\s*existing\s*=\s*esp_zb_zcl_find_reporting_info\s*\(\s*attr_location\s*\)/,
+    "reporting update does not obtain the SDK-owned record handle");
+  assert.match(slots,
+    /if\s*\(\s*existing\s*\)\s*\{\s*info\.info\s*=\s*existing->info\s*;\s*\}/s,
+    "reporting update drops the internal handle returned by the SDK lookup");
+  assert.ok(slots.indexOf("esp_zb_zcl_find_reporting_info(attr_location)") <
+            slots.indexOf("esp_zb_zcl_update_reporting_info(&info)"),
+    "the reporting record must be found before it is updated");
+});
+
 test("normal wake retains the radio through the strict heartbeat deadline after its final push", () => {
   const push = functionBody(
     zbSource,

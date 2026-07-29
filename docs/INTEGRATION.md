@@ -90,7 +90,7 @@ a half-interviewed entry: that creates overlapping interview attempts and
 network-address churn. Acceptance is the Z2M database showing `interviewCompleted:true`,
 `interviewState:"SUCCESSFUL"`, and `epList:[1,2,3,4,5]`.
 
-### v0.1.18 normal-wake environmental reporting
+### v0.1.18 failure and v0.1.19 normal-wake reporting repair
 
 Device-side reporting slots use a one-second minimum interval. v0.1.14 configured
 those slots and immediately pushed T/RH/P; a normal timer wake then slept before a
@@ -115,9 +115,17 @@ safe priming/order, then keeps ordinary timer wakes awake for `max(configured_fl
 3.2 s)` after the final mirror: a strict whole-second `elapsed > 2 s` maximum gets its
 next tick plus the 200 ms scheduler guard. It does not increase the external cadence;
 interval-compensated deep sleep still targets persisted `report_interval_s`. Cold/
-commissioning slots retain their configured flush. Hardware acceptance must observe
-multiple source/HA T/RH/P reports on `first_boot=OFF` wakes; aggregate MQTT cache,
-unchanged numerical state, or cold-boot updates alone do not pass.
+commissioning slots retain their configured flush.
+
+That timing repair was necessary but insufficient. A live, read-only Pressure
+configuration response from v0.1.18 returned `minRepIntval=5` and `maxRepIntval=0`;
+in esp-zigbee-lib, `max=0` disables periodic reporting. v0.1.19 keeps the SDK-owned
+handle returned by `esp_zb_zcl_find_reporting_info()` before calling the compat
+`update_reporting_info()` wrapper, so it patches the existing device record rather
+than leaving its default. Hardware acceptance must first read back the intended
+normal-wake record, then observe multiple source/HA T/RH/P reports on
+`first_boot=OFF` wakes. Aggregate MQTT cache, unchanged numerical state, or cold-boot
+updates alone do not pass.
 
 If the device leaves while quiet/reporting setup is pending, v0.1.18 keeps the MCU awake
 and follows the already-scheduled steering retry rather than sleeping. A successful

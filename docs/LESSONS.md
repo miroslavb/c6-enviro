@@ -338,3 +338,14 @@ Below: the ones that shaped this firmware, plus everything new.
     let main consume a stale completion before the new reporting lifecycle is
     ready. Cancel setup, ready, and flush callbacks together on `LEAVE`; cover
     that contract in the commissioning source test. [env]
+59. **`update_reporting_info()` needs the SDK-owned record handle.** A live
+    post-rejoin `Read Reporting Configuration` for Pressure returned
+    `minRepIntval=5`, `maxRepIntval=0`, and `status=0`, despite v0.1.18 source
+    intending `min=1/max=2` on a normal wake. In esp-zigbee-lib 2.0.3,
+    `EZB_ZCL_MAX_REPORTING_INTERVAL_DEFAULT` is `0x0000` — periodic reporting
+    disabled — and the compat API documents that `.info` returned by
+    `esp_zb_zcl_find_reporting_info()` is required by
+    `esp_zb_zcl_update_reporting_info()`. v0.1.19 retains that opaque handle
+    while patching the full interval/delta record. This is a source-level fix;
+    direct post-flash readback plus no-erase unchanged-Pressure acceptance are
+    still required. [env]

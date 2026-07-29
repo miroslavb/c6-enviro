@@ -384,6 +384,20 @@ static void setup_self_reporting(bool wake_local_heartbeat)
         //    still fits comfortably inside the 2 s report-flush window. On a
         //    normal deep-sleep wake max is wake-local; otherwise it tracks the
         //    persisted measurement/report cadence.
+        //
+        //    `update_reporting_info()` patches an SDK-owned record. Obtain its
+        //    compatibility snapshot first and retain the opaque `.info` handle;
+        //    a zero-initialized handle can leave a coordinator/default record
+        //    (e.g. min=5, max=0) active instead of replacing it.
+        const esp_zb_zcl_attr_location_info_t attr_location = {
+            .endpoint_id  = s->ep,
+            .cluster_id   = s->cluster,
+            .cluster_role = ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+            .manuf_code   = 0,
+            .attr_id      = s->attr,
+        };
+        esp_zb_zcl_reporting_info_t *existing =
+            esp_zb_zcl_find_reporting_info(attr_location);
         esp_zb_zcl_reporting_info_t info = {0};
         info.direction    = ESP_ZB_ZCL_REPORT_DIRECTION_SEND;
         info.ep           = s->ep;
@@ -400,6 +414,9 @@ static void setup_self_reporting(bool wake_local_heartbeat)
         info.dst.endpoint   = 1;
         info.dst.profile_id = ESP_ZB_AF_HA_PROFILE_ID;
         info.manuf_code     = 0;                         // standard ZCL
+        if (existing) {
+            info.info = existing->info;
+        }
         esp_err_t err = esp_zb_zcl_update_reporting_info(&info);
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "reporting info EP%u cl 0x%04X attr 0x%04X: %s",
