@@ -355,8 +355,8 @@ static void setup_self_reporting(bool wake_local_heartbeat)
     esp_zb_aps_get_trust_center_address(tc_addr);
     // A normal timer wake recreates its reporting state, so the configured
     // 30-second heartbeat cannot expire before the MCU sleeps again. Use a
-    // wake-local deadline that arrives just before REPORTING_READY instead.
-    // Cold-boot/commissioning stays awake and retains the user-configured max.
+    // wake-local deadline here; push_cb separately reserves the full strict
+    // maximum interval after its final attribute mirror before flushing.
     const uint16_t max_interval = wake_local_heartbeat
         ? cycle_reporting_wake_heartbeat_max_interval_s(REPORTING_MIN_INTERVAL_S)
         : cycle_reporting_max_interval_s(g_config.report_interval_s,
@@ -537,9 +537,13 @@ static void push_cb(uint8_t param)
 {
     (void)param;
     mirror_measurement_attributes(&g_measurement);
-    // Give the stack engine + parent polling a window to move the frames out,
-    // then let main decide (sleep / stay awake).
-    esp_zb_scheduler_alarm(flush_done_cb, 0, CONFIG_ENVIRO_REPORT_FLUSH_MS);
+    // A normal wake's final mirror may restart the stack reporting clock. Keep
+    // the sleepy radio up through the strict wake-local max deadline; the sleep
+    // budget later compensates this extra awake time against report_interval_s.
+    const uint32_t flush_ms = cycle_reporting_post_push_flush_ms(
+        CONFIG_ENVIRO_REPORT_FLUSH_MS, s_wake_local_heartbeat,
+        REPORTING_MIN_INTERVAL_S, REPORTING_TICK_GUARD_MS);
+    esp_zb_scheduler_alarm(flush_done_cb, 0, flush_ms);
 }
 
 void zb_device_push_measurement(void)
@@ -776,8 +780,12 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             ESP_LOGW(TAG, "left the network — restarting steering");
             s_joined = false;
             s_wake_local_heartbeat = false;
+            // Invalidate every callback from the old network lifecycle. In
+            // particular, a pending extended post-push flush must not release
+            // main's cycle loop while the device is rejoining.
             esp_zb_scheduler_alarm_cancel(setup_self_reporting_cb, 0);
             esp_zb_scheduler_alarm_cancel(reporting_ready_cb, 0);
+            esp_zb_scheduler_alarm_cancel(flush_done_cb, 0);
             schedule_steering_retry(1000);
             emit(ZB_EVT_LEFT);
         } else {

@@ -48,12 +48,20 @@ uint32_t cycle_reporting_settle_ms(uint16_t min_interval_s, uint16_t tick_guard_
 // preserve the ZCL max>=min rule without reporting faster than the user asked.
 uint16_t cycle_reporting_max_interval_s(uint16_t report_interval_s, uint16_t min_interval_s);
 
-// A timer-wake reboot recreates reporting state and remains awake only through
-// the reporting settle + flush window. Give the stack a maximum-report deadline
-// one whole tick after the minimum so it can emit one unchanged-value heartbeat
-// before the normal-wake readiness release. This is wake-local: the device still
-// wakes only at the user-configured report cadence.
+// A timer-wake reboot recreates reporting state. Give the stack a maximum-report
+// deadline one whole tick after the minimum so one unchanged-value heartbeat can
+// become eligible during the wake; the post-push flush helper preserves time for
+// that strict deadline without changing the external wake cadence.
 uint16_t cycle_reporting_wake_heartbeat_max_interval_s(uint16_t min_interval_s);
+
+// Keep the radio alive after the final attribute mirror long enough for the
+// wake-local maximum-report deadline to pass. A strict whole-second `elapsed >
+// max_interval` clock needs one extra tick plus the scheduler guard. Never cut
+// a deliberately longer configured flush; cold/commissioning paths retain it.
+uint32_t cycle_reporting_post_push_flush_ms(uint32_t configured_flush_ms,
+                                            bool wake_local_heartbeat,
+                                            uint16_t min_interval_s,
+                                            uint16_t tick_guard_ms);
 
 // ---- Network/reporting lifecycle ------------------------------------------
 

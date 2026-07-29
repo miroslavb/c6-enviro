@@ -319,3 +319,22 @@ Below: the ones that shaped this firmware, plus everything new.
     Keep `report_interval_s` maxima for cold/commissioning paths, never resurrect the
     unsafe manual-report API, and accept this only after a no-erase soak shows advancing
     source/HA Pressure timestamps on multiple `first_boot=OFF` wakes. [env]
+57. **The reporting deadline must survive the final attribute mirror, not only
+    slot registration.** v0.1.17's no-erase soak showed that its 2 s wake-local
+    maximum plus 2.2 s pre-push settle was insufficient: normal 30 s wakes continued,
+    but unchanged T/RH/P had multi-minute HA `last_reported` gaps and Pressure moved
+    only when `986 ↔ 987`. The final `mirror_measurement_attributes()` preceded a
+    fixed 2.0 s flush, so a strict whole-second `elapsed > max_interval` deadline could
+    be reset or become eligible only as the radio window ended. v0.1.18 retains
+    prime-before-register but computes `cycle_reporting_post_push_flush_ms()` on every
+    normal push: with min=1, `max=2 s`, and a 200 ms guard, it preserves at least
+    3.2 s after the final mirror. This increases awake time only; `cycle_sleep_ms()`
+    subtracts it from deep sleep, so the persisted external cadence is unchanged.
+    It is a production candidate until a no-erase normal-wake source/HA soak proves
+    unchanged T/RH/P transitions. [env]
+58. **A `LEAVE` invalidates the post-push flush as well as setup/READY.** The
+    deferred `flush_done_cb` emits `ZB_EVT_REPORT_FLUSHED`, so after a v0.1.18
+    normal wake it can otherwise survive its 3.2 s window into a rejoin and
+    let main consume a stale completion before the new reporting lifecycle is
+    ready. Cancel setup, ready, and flush callbacks together on `LEAVE`; cover
+    that contract in the commissioning source test. [env]
